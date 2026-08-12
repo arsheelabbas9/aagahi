@@ -12,6 +12,8 @@ class DatabaseAdapter:
     Singleton class managing the HTTPS connection to the live Supabase PostgreSQL cluster.
     Implements 'Lazy Loading' to protect the application from transient network blips 
     and connection throttling during aggressive read/write scaling.
+    Upgraded for cloud production to support both local TOML configurations and 
+    Render environment variables seamlessly.
     """
     
     # Internal tracking for the singleton instance lock
@@ -37,23 +39,34 @@ class DatabaseAdapter:
     def _init_connection(self) -> None:
         """
         Orchestrates the extraction of cryptographic secrets and initializes the master Supabase client.
-        Upgraded to dynamically map absolute file paths, preventing terminal boot crashes when
-        the uvicorn server is executed from outside the immediate directory scope.
+        Automatically checks for a local secrets.toml file first; if missing (such as in cloud 
+        deployments on Render), it reads directly from secure host environment variables.
         
         Raises:
-            Exception: Fatal error if the secrets file is missing, malformed, or network drops.
+            Exception: Fatal error if credentials are missing, malformed, or network drops.
         """
         try:
-            # Step 1: Resolve the absolute file path dynamically to prevent boot crashes
+            supabase_url: Optional[str] = None
+            supabase_key: Optional[str] = None
+
+            # Step 1: Resolve the absolute file path dynamically for local development
             current_directory: str = os.path.dirname(os.path.abspath(__file__))
             secrets_file_path: str = os.path.join(current_directory, "secrets.toml")
             
-            # Step 2: Safely parse the strict configuration boundaries from the resolved path
-            config_data: dict[str, Any] = toml.load(secrets_file_path)
-            
-            # Step 3: Unpack the required connection strings into active memory
-            supabase_url: str = config_data['SUPABASE']['URL']
-            supabase_key: str = config_data['SUPABASE']['SERVICE_ROLE_KEY']
+            # Step 2: Dual-path configuration detection (Local TOML vs Cloud Environment Variables)
+            if os.path.exists(secrets_file_path):
+                # Local environment: parse strict configuration boundaries from the TOML file
+                config_data: dict[str, Any] = toml.load(secrets_file_path)
+                supabase_url = config_data.get('SUPABASE', {}).get('URL')
+                supabase_key = config_data.get('SUPABASE', {}).get('SERVICE_ROLE_KEY')
+            else:
+                # Cloud production environment (Render): retrieve directly from platform environment variables
+                supabase_url = os.environ.get("SUPABASE_URL")
+                supabase_key = os.environ.get("SUPABASE_KEY")
+
+            # Step 3: Guard clause to ensure credentials were successfully acquired from one of the sources
+            if not supabase_url or not supabase_key:
+                raise ValueError("Supabase credentials are missing. Verify secrets.toml exists locally or Render Environment Variables are set.")
 
             # Step 4: Initialize the master Supabase client and bind it to the class state
             self.client = create_client(supabase_url, supabase_key)
