@@ -5,3 +5,4 @@ supabase
 bcrypt
 groq
 pillow
+toml
