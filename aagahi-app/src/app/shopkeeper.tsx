@@ -92,9 +92,8 @@ const API_COMPLIANCE_URL: string = `${API_BASE_URL}/api/shops/compliance`;
  * update mandatory fire safety checklists, calculate live compliance scores, 
  * and inspect their unique, ID-bound cryptographic QR identity hash (Pillar 4).
  * 
- * UPGRADED: The fire safety checklist now utilizes an expanded, easy-to-read English 
- * vocabulary ensuring perfect comprehension for local vendors, while capturing deeper
- * environmental hazards for the engine.
+ * UPGRADED: All states strictly default to FALSE and 0. Shopkeepers must manually 
+ * check items to earn compliance points.
  * 
  * @returns {React.JSX.Element} The strictly typed, rendered Shopkeeper Interface.
  */
@@ -105,20 +104,21 @@ export default function ShopkeeperScreen(): React.JSX.Element {
   const { user } = useAuth();
 
   // --- Explicitly Typed State Management ---
+  // ALL STATES DEFAULT TO FALSE AS PER REQUIREMENT. NO FREE POINTS.
   
   // CORE METRICS: Tracks individual infrastructure checklist statuses for real-time score calculation
-  const [extinguisherOperational, setExtinguisherOperational] = useState<boolean>(true);
-  const [wiringInspected, setWiringInspected] = useState<boolean>(true);
-  const [exitsUnobstructed, setExitsUnobstructed] = useState<boolean>(true);
-  const [emergencyLightingActive, setEmergencyLightingActive] = useState<boolean>(true);
+  const [extinguisherOperational, setExtinguisherOperational] = useState<boolean>(false);
+  const [wiringInspected, setWiringInspected] = useState<boolean>(false);
+  const [exitsUnobstructed, setExitsUnobstructed] = useState<boolean>(false);
+  const [emergencyLightingActive, setEmergencyLightingActive] = useState<boolean>(false);
 
   // EXPANDED METRICS: New real-world parameters targeting local shop constraints natively
-  const [flammablesIsolated, setFlammablesIsolated] = useState<boolean>(true);
-  const [gasSecured, setGasSecured] = useState<boolean>(true);
-  const [ventilationClear, setVentilationClear] = useState<boolean>(true);
+  const [flammablesIsolated, setFlammablesIsolated] = useState<boolean>(false);
+  const [gasSecured, setGasSecured] = useState<boolean>(false);
+  const [ventilationClear, setVentilationClear] = useState<boolean>(false);
 
-  // SYSTEM METRICS: Tracks the live calculated safety score retrieved from the backend engine
-  const [currentScore, setCurrentScore] = useState<number>(100);
+  // SYSTEM METRICS: Tracks the live calculated safety score retrieved from the backend engine. Defaults to 0.
+  const [currentScore, setCurrentScore] = useState<number>(0);
   
   // SYSTEM METRICS: Tracks network submission loading status to prevent double-tap race conditions
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);

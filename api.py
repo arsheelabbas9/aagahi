@@ -968,6 +968,41 @@ def analyze_room_safety(request: AiScanRequest) -> Dict[str, Any]:
     the most direct fix is a paid Groq Dev Tier (raises the TPM ceiling) or a dedicated
     4th close-up frame -- both are outside what a compression tweak alone can solve.
 
+    ==================================================================================
+    V4 UPDATE -- REAL 413 TELEMETRY PROVED THE "SHRINK EACH IMAGE" LEVER WAS WEAK;
+    SWITCHED TO A SINGLE COMPOSITE MONTAGE + RIGHT-SIZED COMPLETION BUDGET INSTEAD
+    ==================================================================================
+    Production logs from three consecutive real attempts told a very specific story:
+
+        Attempt 1 (176x176/q80, max_completion_tokens=1800): Requested 9870
+        Attempt 2 (144x144/q68, max_completion_tokens=1500): Requested 9570
+        Attempt 3 (112x112/q58, max_completion_tokens=1100): Requested 9170
+
+    Shrinking each photo from 176x176 down to 112x112 -- a ~60% cut in pixel AREA --
+    only moved "Requested" by 700 tokens total across both steps. That 700 is fully and
+    exactly accounted for by the completion-budget cuts alone (1800-1100=700). In other
+    words, the per-image resolution cuts bought us close to nothing, because Groq's rate
+    limiter reserves the FULL `max_completion_tokens` value up front as part of every
+    "Requested" figure -- it isn't an estimate of what the model will actually use, it's
+    a hard reservation. That's lever #1, and it's free: right-sizing it costs zero
+    accuracy as long as the real completion never needs more than what's reserved.
+
+    That the image resizing barely moved the number at all is also informative: it's the
+    classic signature of a vision encoder charging a largely fixed, tiling-based cost per
+    *image* rather than a cost that scales smoothly with pixel area -- so shrinking a
+    photo that's already small mostly just re-arranges pixels within the same tile
+    allocation instead of shedding tiles. If that's what's happening, sending 3 separate
+    images pays that fixed per-image cost 3 times over. Lever #2, then: stop sending 3
+    separate image blocks and instead stitch all 3 frames into ONE combined montage photo
+    (left-to-right, in capture order) and send that as a single image. This is a hypothesis
+    grounded in the data pattern above, not a documented guarantee from Groq -- the
+    `usage` telemetry already logged below will show you within one real scan whether it
+    held, and the tiered retry ladder still automatically compresses further if not.
+
+    Both levers point the same direction and are additive: a right-sized completion
+    budget plus one consolidated image, instead of three, should land comfortably under
+    the 8,000 TPM ceiling without touching the 3-photo capture or the hazard taxonomy.
+
     Args:
         request (AiScanRequest): The strongly-typed Pydantic model containing the array of
             image frames captured by the mobile wizard, each tagged with a human-readable
@@ -1005,7 +1040,7 @@ def analyze_room_safety(request: AiScanRequest) -> Dict[str, Any]:
         # identical to the original slicing behavior, so every downstream reference
         # (including the demo-data fallback path and the final `images_analyzed` tally)
         # consistently reflects the true number of images actually submitted.
-        safely_truncated_images: List[ImageData] = incoming_images[:2]
+        safely_truncated_images: List[ImageData] = incoming_images[:3]
 
         # Step 4: Attempt Real AI LLM Integration (Groq Cloud API with Vision)
         try:
@@ -1089,93 +1124,100 @@ def analyze_room_safety(request: AiScanRequest) -> Dict[str, Any]:
             # identical output score run after run.
             deterministic_seed: int = 7
 
-            # Calibrated against REAL production telemetry rather than a theoretical patch
-            # grid: your own logs showed 168x168 imagery costing 4,063 real prompt tokens,
-            # and 224x224 imagery still being rejected at ~7,423 prompt tokens. Fitting a
-            # simple area-scaling curve (cost per image ~ pixel_width * pixel_height) to
-            # those two real points, then padding it with a safety margin, gives the tiers
-            # below. Because the hazard checklist itself is now much longer (comprehensive
-            # taxonomy + fire-extinguisher logic), and because "list every hazard you find"
-            # can legitimately need a long completion for a genuinely hazardous shop, the
-            # completion budgets here are also substantially larger than the old 500/800 --
-            # each description is capped at ~15 words in the prompt above specifically so a
-            # long hazard list doesn't blow the completion budget before it's finished.
-            primary_image_dimensions: tuple[int, int] = (176, 176)
-            primary_jpeg_quality: int = 80
-            primary_completion_token_budget: int = 1800
+            # V4: Tiers now describe a SINGLE composite montage (all 3 frames stitched into
+            # one photo) rather than 3 separate images, and every completion-token budget
+            # has been cut to what a 15-word-per-hazard JSON payload actually needs -- not
+            # a round, oversized guess. Per the V4 rationale above, `max_completion_tokens`
+            # is reserved in FULL against the TPM ceiling regardless of what's really used,
+            # so shrinking it is a pure, zero-accuracy-cost win. `tile_dimensions` is the
+            # max size EACH of the 3 frames is downscaled to before being stitched
+            # side-by-side into the one montage image that actually gets sent.
+            primary_tile_dimensions: tuple[int, int] = (150, 150)
+            primary_jpeg_quality: int = 75
+            primary_completion_token_budget: int = 1000
 
             # Fallback tier 1 -- engaged only if Groq rejects the primary attempt as
-            # oversized. Meaningfully smaller images and a slightly tighter completion
-            # budget, still generous enough for a thorough multi-hazard listing.
-            secondary_image_dimensions: tuple[int, int] = (144, 144)
-            secondary_jpeg_quality: int = 68
-            secondary_completion_token_budget: int = 1500
+            # oversized. Smaller montage tiles and a tighter completion budget.
+            secondary_tile_dimensions: tuple[int, int] = (120, 120)
+            secondary_jpeg_quality: int = 62
+            secondary_completion_token_budget: int = 800
 
             # Fallback tier 2 -- the last-resort safety net before the anti-crash demo-data
             # path takes over. Deliberately small and cheap so it is essentially guaranteed
             # to fit under the TPM ceiling no matter how much the checklist above grows in
             # the future.
-            tertiary_image_dimensions: tuple[int, int] = (112, 112)
-            tertiary_jpeg_quality: int = 58
-            tertiary_completion_token_budget: int = 1100
+            tertiary_tile_dimensions: tuple[int, int] = (96, 96)
+            tertiary_jpeg_quality: int = 52
+            tertiary_completion_token_budget: int = 600
 
-            def _compress_image_for_vision_payload(
-                raw_base64_image: str,
-                target_dimensions: tuple[int, int],
+            def _build_composite_montage(
+                images: List[ImageData],
+                tile_dimensions: tuple[int, int],
                 jpeg_quality: int
             ) -> str:
                 """
-                Decode a single captured frame's base64 payload, downscale it to the
-                requested pixel grid using a high-quality Lanczos filter, re-encode it as a
-                compact JPEG, and return the freshly compressed base64 string.
+                Decode every captured frame, downscale each into an identical
+                `tile_dimensions` thumbnail, and paste them left-to-right into ONE combined
+                JPEG canvas (separated by a thin gutter), then re-encode and return that
+                single composite as a base64 string.
+
+                WHY THIS EXISTS: see the "V4 UPDATE" block in the parent function's
+                docstring. In short -- real telemetry showed shrinking 3 SEPARATE images
+                barely reduced Groq's "Requested" token figure, which is the signature of a
+                largely fixed per-image cost dominating over pixel area. Stitching all 3
+                frames into one image pays that fixed cost once instead of three times,
+                while still giving the model the full, unobstructed view of every angle.
 
                 Args:
-                    raw_base64_image (str): The raw base64 payload as transmitted by the
-                        mobile client, optionally prefixed with a `data:image/jpeg;base64,`
-                        URI header.
-                    target_dimensions (tuple[int, int]): The maximum (width, height) the
-                        image will be downscaled to, preserving aspect ratio.
-                    jpeg_quality (int): The JPEG re-encoding quality (1-100). This primarily
-                        affects transfer size and compression artifacts rather than the
-                        vision model's token accounting, which scales chiefly with the pixel
-                        grid dimensions rather than file size.
+                    images (List[ImageData]): The (already-capped-at-3) captured frames, in
+                        the same left-to-right order they'll appear in the montage.
+                    tile_dimensions (tuple[int, int]): Max (width, height) each individual
+                        frame is downscaled to (aspect-preserved) before being placed into
+                        the montage.
+                    jpeg_quality (int): JPEG re-encoding quality for the final composite.
+                        Chiefly affects transfer size / artifacting, not vision token count.
 
                 Returns:
-                    str: A base64-encoded JPEG string ready to be embedded in a
-                        `data:image/jpeg;base64,...` URL for the Groq chat completions API.
+                    str: Base64-encoded JPEG of the single combined montage image.
 
                 Raises:
-                    ValueError: If the payload cannot be decoded, opened, or re-encoded for
-                        any reason (corrupted base64, unsupported format, memory pressure).
+                    ValueError: If any frame fails to decode, or the montage fails to encode.
                 """
                 try:
-                    # Strip any HTML data-URI prefix the client may have left attached
-                    clean_base64: str = raw_base64_image.replace("data:image/jpeg;base64,", "").strip()
+                    tile_w, tile_h = tile_dimensions
+                    gutter_px: int = 4
 
-                    # A: Decode the base64 string into raw binary bytes natively
-                    image_binary: bytes = base64.b64decode(clean_base64)
+                    # A: Decode and downscale every frame into an identical-footprint tile.
+                    resized_tiles: List[Image.Image] = []
+                    for img_data in images:
+                        clean_base64: str = img_data.image_base64.replace("data:image/jpeg;base64,", "").strip()
+                        image_binary: bytes = base64.b64decode(clean_base64)
+                        pil_image: Image.Image = Image.open(io.BytesIO(image_binary))
+                        if pil_image.mode != "RGB":
+                            pil_image = pil_image.convert("RGB")
+                        pil_image.thumbnail((tile_w, tile_h), Image.Resampling.LANCZOS)
+                        resized_tiles.append(pil_image)
 
-                    # B: Load the binary data into the Pillow image processing engine
-                    image_buffer: io.BytesIO = io.BytesIO(image_binary)
-                    pil_image: Image.Image = Image.open(image_buffer)
+                    # B: Paste every tile flush to the top-left of its fixed-size slot, so
+                    # slightly non-square source photos never misalign the montage grid.
+                    tile_count: int = len(resized_tiles)
+                    canvas_width: int = (tile_w * tile_count) + (gutter_px * max(tile_count - 1, 0))
+                    canvas_height: int = tile_h
+                    montage_canvas: Image.Image = Image.new("RGB", (canvas_width, canvas_height), color=(0, 0, 0))
 
-                    # C: Convert to standard RGB to prevent RGBA/Alpha channel crashes during JPEG compression
-                    if pil_image.mode != "RGB":
-                        pil_image = pil_image.convert("RGB")
+                    x_cursor: int = 0
+                    for tile in resized_tiles:
+                        montage_canvas.paste(tile, (x_cursor, 0))
+                        x_cursor += tile_w + gutter_px
 
-                    # D: Execute the mathematical downscale to the requested viable dimensions
-                    pil_image.thumbnail(target_dimensions, Image.Resampling.LANCZOS)
-
-                    # E: Re-encode the highly compressed image back to a base64 string
+                    # C: Re-encode the single stitched canvas back to a compact base64 JPEG.
                     output_buffer: io.BytesIO = io.BytesIO()
-                    pil_image.save(output_buffer, format="JPEG", quality=jpeg_quality)
-                    compressed_binary: bytes = output_buffer.getvalue()
-
-                    return base64.b64encode(compressed_binary).decode("utf-8")
-                except Exception as compression_error:
+                    montage_canvas.save(output_buffer, format="JPEG", quality=jpeg_quality)
+                    return base64.b64encode(output_buffer.getvalue()).decode("utf-8")
+                except Exception as montage_error:
                     raise ValueError(
-                        f"Failed to compress image payload for vision submission: {str(compression_error)}"
-                    ) from compression_error
+                        f"Failed to build composite montage image: {str(montage_error)}"
+                    ) from montage_error
 
             def _build_vision_message_content(
                 target_dimensions: tuple[int, int],
@@ -1183,51 +1225,56 @@ def analyze_room_safety(request: AiScanRequest) -> Dict[str, Any]:
             ) -> List[Dict[str, Any]]:
                 """
                 Assemble the full multimodal `content` array for the Groq chat completion
-                request at a given compression tier. Consolidates every angle label into a
-                single upfront text block (instead of one separate "type": "text" object
-                interleaved per image, as the previous implementation did), which both trims
-                the small per-block JSON overhead and gives the model cleaner batch context
-                to reason -- deterministically -- against.
+                request at a given compression tier. Every angle label is consolidated into
+                a single upfront text block describing the left-to-right order of the ONE
+                composite montage image that follows, instead of one separate "type": "text"
+                object interleaved per image as earlier revisions did -- both trimming the
+                small per-block JSON overhead and giving the model cleaner batch context to
+                reason -- deterministically -- against.
 
                 Args:
-                    target_dimensions (tuple[int, int]): The pixel grid to downscale every
-                        frame to for this attempt.
+                    target_dimensions (tuple[int, int]): The per-tile pixel grid each frame
+                        is downscaled to before being stitched into the montage for this
+                        attempt.
                     jpeg_quality (int): The JPEG re-encoding quality for this attempt.
 
                 Returns:
                     List[Dict[str, Any]]: The ordered list of text/image content blocks ready
-                        to be embedded in the outgoing chat message.
+                        to be embedded in the outgoing chat message -- exactly TWO text
+                        blocks followed by exactly ONE image block.
 
                 Raises:
-                    ValueError: Propagated from `_compress_image_for_vision_payload` if any
-                        individual frame in the batch fails to compress.
+                    ValueError: Propagated from `_build_composite_montage` if any individual
+                        frame in the batch fails to decode or the montage fails to encode.
                 """
-                # Step A: Consolidate every angle label into a single upfront text block
+                # Step A: Consolidate every angle label into a single upfront text block,
+                # explicitly telling the model this is now one combined photo, not several.
                 angle_order_labels: List[str] = [
                     f"{index + 1}) {img_data.angle_label}"
                     for index, img_data in enumerate(safely_truncated_images)
                 ]
-                angle_order_text: str = "Image order: " + ", ".join(angle_order_labels)
+                angle_order_text: str = (
+                    "The single image below is a combined montage of all captured angles, "
+                    "placed left to right in this order: " + ", ".join(angle_order_labels)
+                )
 
                 content_array: List[Dict[str, Any]] = [
                     {"type": "text", "text": system_instruction_text},
                     {"type": "text", "text": angle_order_text},
                 ]
 
-                # Step B: Compress and append each frame in order. No per-image label text
-                # block is attached here -- the consolidated ordering above already
-                # communicates it, saving the repeated JSON-block overhead.
-                for img_data in safely_truncated_images:
-                    optimized_base64: str = _compress_image_for_vision_payload(
-                        raw_base64_image=img_data.image_base64,
-                        target_dimensions=target_dimensions,
-                        jpeg_quality=jpeg_quality
-                    )
-                    image_data_url: str = f"data:image/jpeg;base64,{optimized_base64}"
-                    content_array.append({
-                        "type": "image_url",
-                        "image_url": {"url": image_data_url}
-                    })
+                # Step B: Build the one stitched montage image and append it as the sole
+                # image block for this request.
+                composite_base64: str = _build_composite_montage(
+                    images=safely_truncated_images,
+                    tile_dimensions=target_dimensions,
+                    jpeg_quality=jpeg_quality
+                )
+                composite_data_url: str = f"data:image/jpeg;base64,{composite_base64}"
+                content_array.append({
+                    "type": "image_url",
+                    "image_url": {"url": composite_data_url}
+                })
 
                 return content_array
 
@@ -1291,28 +1338,28 @@ def analyze_room_safety(request: AiScanRequest) -> Dict[str, Any]:
                         optional_kwargs.pop(dropped_key)
 
             # ==========================================
-            # TWO-TIER CAPACITY RETRY LADDER
+            # THREE-TIER CAPACITY RETRY LADDER
             # ==========================================
-            # Attempt 1 uses full-quality, patch-aligned 224x224 imagery. If -- and only if
-            # -- Groq rejects that specific attempt for being oversized against the TPM
-            # ceiling, Attempt 2 retries once with more aggressively compressed 168x168
-            # imagery and a tighter completion budget. Every other kind of failure (auth,
-            # network, malformed response) is NOT retried here; it falls straight through to
-            # the existing anti-crash fallback below, exactly as it did before.
+            # Attempt 1 uses the primary montage tile size. If -- and only if -- Groq
+            # rejects that specific attempt for being oversized against the TPM ceiling,
+            # each subsequent attempt retries with a smaller montage and a tighter
+            # completion budget. Every other kind of failure (auth, network, malformed
+            # response) is NOT retried here; it falls straight through to the existing
+            # anti-crash fallback below, exactly as it did before.
 
             attempt_tiers: List[Dict[str, Any]] = [
                 {
-                    "dimensions": primary_image_dimensions,
+                    "dimensions": primary_tile_dimensions,
                     "quality": primary_jpeg_quality,
                     "token_budget": primary_completion_token_budget,
                 },
                 {
-                    "dimensions": secondary_image_dimensions,
+                    "dimensions": secondary_tile_dimensions,
                     "quality": secondary_jpeg_quality,
                     "token_budget": secondary_completion_token_budget,
                 },
                 {
-                    "dimensions": tertiary_image_dimensions,
+                    "dimensions": tertiary_tile_dimensions,
                     "quality": tertiary_jpeg_quality,
                     "token_budget": tertiary_completion_token_budget,
                 },
@@ -1342,7 +1389,7 @@ def analyze_room_safety(request: AiScanRequest) -> Dict[str, Any]:
                     if is_capacity_related_error and not is_final_tier:
                         print(
                             f"[API.analyze_room_safety] Attempt {attempt_index + 1} exceeded the token "
-                            f"budget ({str(attempt_error)}); retrying with more aggressively compressed imagery."
+                            f"budget ({str(attempt_error)}); retrying with a smaller composite montage."
                         )
                         continue
                     # Either a non-capacity error, or the retry ladder is exhausted -- let it
@@ -1357,8 +1404,9 @@ def analyze_room_safety(request: AiScanRequest) -> Dict[str, Any]:
             print(f"\n[API.analyze_room_safety] === RAW AI OUTPUT START ===\n{raw_response_text}\n=== RAW AI OUTPUT END ===\n")
 
             # Step 8.6: Log actual token consumption when the SDK exposes it, so you can
-            # empirically verify the fix against Groq's TPM ceiling in your own server logs
-            # rather than having to guess at it.
+            # empirically verify the V4 fix against Groq's TPM ceiling in your own server
+            # logs rather than having to guess at it -- this is the number to watch to
+            # confirm whether the "fixed per-image cost" hypothesis above actually held.
             try:
                 usage_stats: Any = getattr(chat_completion, "usage", None)
                 if usage_stats is not None:
@@ -1397,7 +1445,7 @@ def analyze_room_safety(request: AiScanRequest) -> Dict[str, Any]:
             # ==========================================
             # TITANIUM ANTI-CRASH FALLBACK (FOR JUDGE DEMO)
             # ==========================================
-            # If the API key is missing, both retry tiers still exceed the TPM ceiling, or
+            # If the API key is missing, all retry tiers still exceed the TPM ceiling, or
             # the external network drops during the presentation, this mathematical fallback
             # catches the error gracefully. It guarantees the app delivers a highly realistic
             # multi-angle safety report instead of a fatal HTTP 500 Red Screen crash.
