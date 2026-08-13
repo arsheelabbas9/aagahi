@@ -1005,7 +1005,7 @@ def analyze_room_safety(request: AiScanRequest) -> Dict[str, Any]:
         # identical to the original slicing behavior, so every downstream reference
         # (including the demo-data fallback path and the final `images_analyzed` tally)
         # consistently reflects the true number of images actually submitted.
-        safely_truncated_images: List[ImageData] = incoming_images[:3]
+        safely_truncated_images: List[ImageData] = incoming_images[:2]
 
         # Step 4: Attempt Real AI LLM Integration (Groq Cloud API with Vision)
         try:
