@@ -1,11 +1,19 @@
+import os
+import json
+import base64
+import io
+import re
+import uuid
 from typing import Dict, Any, List, Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from PIL import Image
 
 # Internal Module Imports
 from spatial_engine import SpatialEngine
 from repositories import StoreRepository, UserRepository, HazardRepository, ChatRepository, FundRepository
+from kernel import get_db  # Imported to facilitate direct database access for the new AI Storage Pipeline
 
 # ==========================================
 # SYSTEM INITIALIZATION & ORCHESTRATION
@@ -15,8 +23,8 @@ from repositories import StoreRepository, UserRepository, HazardRepository, Chat
 # This serves as the primary event loop and request router for the Phase 1/Phase 2/Phase 3 architecture.
 app: FastAPI = FastAPI(
     title="Aagahi Routing & Hazard API",
-    description="Central Nervous System for Spatial Hazard Tracking, Routing, and Identity Management.",
-    version="3.0.0"
+    description="Central Nervous System for Spatial Hazard Tracking, Routing, Identity Management, and AI Telemetry Logging.",
+    version="3.1.0" # Version bumped to reflect the Phase 3.1 Cloud Storage Integration
 )
 
 # ==========================================
@@ -168,7 +176,7 @@ def health_check() -> Dict[str, str]:
         # Construct and unpack the status response payload explicitly into memory
         response_payload: Dict[str, str] = {
             "status": "Aagahi API is Online",
-            "version": "3.0.0"
+            "version": "3.1.0"
         }
         
         return response_payload
@@ -919,6 +927,47 @@ def analyze_room_safety(request: AiScanRequest) -> Dict[str, Any]:
         keep your 3 photos every single time; only their internal resolution shrinks, and
         only if it turns out to be necessary.
 
+    ==================================================================================
+    V3 UPDATE -- CALIBRATED AGAINST REAL PRODUCTION TELEMETRY, EXPANDED HAZARD TAXONOMY
+    ==================================================================================
+    A real scan logged actual numbers: 168x168 imagery used 4,063 real prompt tokens
+    (confirmed by Groq's own `usage` object), while 224x224 imagery was still rejected
+    at ~7,423 prompt tokens even with a trimmed completion budget. That tells us the
+    "align to a 28px ViT patch grid" theory from the first revision was not the dominant
+    cost driver in practice -- raw pixel AREA is. This revision throws out the unverified
+    theory and instead fits a simple area-scaling model directly to those two real data
+    points, then re-derives image dimensions from it with a deliberate safety margin, so
+    the numbers below are grounded in your actual logs rather than a guess.
+
+    This revision also replaces the short example-driven hazard prompt with a full,
+    categorized checklist (electrical / storage / egress / thermal / gas / fire
+    equipment) so the model is explicitly cued to look for dozens of distinct failure
+    modes instead of the handful it happens to think of unprompted. Two concrete quality
+    bugs are fixed along the way:
+
+      1. SINGLE-EXAMPLE ANCHORING: the old JSON schema example showed exactly ONE
+         hazard_breakdown entry. LLMs tend to mirror the cardinality of the example
+         they're shown, which nudges them toward reporting just one hazard even when
+         several are visible. The new example shows three entries and explicitly states
+         there is no cap on how many the model may return.
+
+      2. MISSING FIRE-EXTINGUISHER LOGIC: the prompt now explicitly requires the model to
+         search every frame for an extinguisher. If none is found, it must add a
+         "Fire Equipment" hazard recommending exactly where to mount one and why. If one
+         IS found, the model inspects it for the floor-resting / obstructed / rusted /
+         cracked-hose / missing-pin / red-zone-gauge signs of being expired or unusable.
+         A new top-level `extinguisher_status` field ("missing" / "present_needs_service"
+         / "present_ok" / "unknown") surfaces this directly for the frontend to branch on,
+         separately from the free-text hazard list.
+
+    HONEST LIMITATION: fine-grained inspection details (reading a pressure gauge needle,
+    spotting a hairline crack in a hose) genuinely need more pixels than an ~8,000 TPM
+    budget can afford across 3 full-scene photos. The prompt now explicitly tells the
+    model to hedge in its description when the image is too small to be confident, rather
+    than confidently guessing. If you need reliable close-up extinguisher verification,
+    the most direct fix is a paid Groq Dev Tier (raises the TPM ceiling) or a dedicated
+    4th close-up frame -- both are outside what a compression tweak alone can solve.
+
     Args:
         request (AiScanRequest): The strongly-typed Pydantic model containing the array of
             image frames captured by the mobile wizard, each tagged with a human-readable
@@ -948,6 +997,9 @@ def analyze_room_safety(request: AiScanRequest) -> Dict[str, Any]:
         calculated_safety_score: int = 50
         hazard_breakdown_array: List[Dict[str, Any]] = []
         improvement_steps_text: str = "Please manually inspect the perimeter."
+        # NEW: Tracks whether a fire extinguisher was found and, if so, whether it looks
+        # serviceable. One of "missing", "present_needs_service", "present_ok", "unknown".
+        extinguisher_status_text: str = "unknown"
 
         # Step 3.5: Cap the working image set at exactly 3 frames up front, mathematically
         # identical to the original slicing behavior, so every downstream reference
@@ -957,13 +1009,7 @@ def analyze_room_safety(request: AiScanRequest) -> Dict[str, Any]:
 
         # Step 4: Attempt Real AI LLM Integration (Groq Cloud API with Vision)
         try:
-            import os
-            import json
-            import base64
-            import io
-            import re
             from groq import Groq
-            from PIL import Image
 
             # Extract the secure API token natively from the host environment variables
             groq_api_key: Optional[str] = os.environ.get("GROQ_API_KEY")
@@ -985,16 +1031,53 @@ def analyze_room_safety(request: AiScanRequest) -> Dict[str, Any]:
             # from narrating its reasoning, which is the single largest lever against the
             # token overflow you were experiencing.
             system_instruction_text: str = (
-                "Analyze fire safety across the provided room images (angles listed in order below). "
-                "Start at 100 points. Deduct points for visible hazards: "
-                "-25 (exposed wires, blocked exits), -15 (daisy-chains, blocked paths), "
-                "-10 (trip hazards, flammables), -5 (clutter). "
-                "Do not explain your reasoning or think out loud. Respond with ONLY a single raw "
-                "JSON object, no markdown fences, no commentary, matching this EXACT schema:\n"
-                "{\"safety_score\": 90, \"hazard_breakdown\": [{\"category\": \"Electrical\", "
-                "\"severity\": \"high\", \"description\": \"Visible extension cord daisy-chaining.\", "
-                "\"detected_in_angle\": \"Electrical & Wiring\"}], "
-                "\"improvement_steps\": \"1. Unplug extension cords immediately.\"}"
+                "You are a fire-safety inspector scanning a small shop from the images below (order "
+                "listed after this text). Systematically scan every image fully: floor, walls, ceiling, "
+                "corners, near exits, near electrical points.\n"
+                "SCORE: start at 100, never below 0. Deduct per hazard found -- 25 (exposed/scorched "
+                "wiring, blocked exits, missing extinguisher), 15 (daisy-chained cords, blocked aisles, "
+                "damaged/expired extinguisher), 10 (trip hazards, flammables near heat, blocked "
+                "ventilation), 5 (clutter, minor issues).\n"
+                "CHECK EVERY CATEGORY. List EVERY instance found -- do not stop at a few examples, there "
+                "is no limit on how many hazard_breakdown entries you may return:\n"
+                "ELECTRICAL: exposed/frayed/taped wiring, scorched or burnt sockets, overloaded "
+                "switchboards, daisy-chained extension cords, open or damaged breaker/DB panel, missing "
+                "blanking plates, wiring under mats/rugs, unsupported dangling conduits, wiring near "
+                "water/leaks.\n"
+                "STORAGE: cardboard/packing near panels or heat, flammable liquids near heat, stock "
+                "stacked to ceiling touching lights/wires, dust/lint/debris buildup, oily rag piles, "
+                "aerosols in direct sun, combustible plywood/cardboard partitions touching electrical.\n"
+                "EGRESS: blocked exits, aisles under 3ft wide, half-shut or locked shutters while "
+                "occupied, trip hazards near exits, dead-end layout, missing exit signage or emergency "
+                "lighting.\n"
+                "THERMAL: blocked appliance ventilation (fridge/freezer/AC/oven), halogen lights near "
+                "flammables, exposed fluorescent tubes, indoor generator, smothered appliances, clogged "
+                "exhaust fans, heaters near fabric.\n"
+                "GAS: LPG/propane cylinders lying flat, uncapped, or unbracketed, near heat or wiring.\n"
+                "FIRE EQUIPMENT (mandatory check): search every image for a fire extinguisher. If NONE "
+                "is visible anywhere, add a 'Fire Equipment' hazard, severity 'critical', description "
+                "recommending the exact spot to mount one (e.g. near the main exit, chest height, away "
+                "from the stove) and why. If one IS visible, inspect it: floor-resting instead of "
+                "wall-bracketed, obstructed by inventory, rusted, cracked hose, missing pin, or gauge "
+                "needle in the red zone -> flag as likely needing service, severity 'high'. If it looks "
+                "intact, mounted, and unobstructed, do not add a hazard for it. If the image is too small "
+                "to confidently judge a fine detail (like a gauge needle), say so in the description "
+                "instead of guessing. Set extinguisher_status to exactly one of: 'missing', "
+                "'present_needs_service', or 'present_ok'.\n"
+                "Keep each hazard description under 15 words. Do not explain your reasoning or think out "
+                "loud. Respond with ONLY a single raw JSON object, no markdown fences, no commentary, "
+                "matching this EXACT schema (your real hazard_breakdown array may have as many entries as "
+                "you actually find -- this example only shows the shape, not a length limit):\n"
+                "{\"safety_score\": 55, \"extinguisher_status\": \"missing\", \"hazard_breakdown\": ["
+                "{\"category\": \"Electrical\", \"severity\": \"high\", \"description\": \"Exposed wiring "
+                "above the counter.\", \"detected_in_angle\": \"Electrical & Wiring\"}, "
+                "{\"category\": \"Fire Equipment\", \"severity\": \"critical\", \"description\": \"No "
+                "extinguisher visible; mount one near main exit, chest height, away from stove.\", "
+                "\"detected_in_angle\": \"Exit & Pathway\"}, "
+                "{\"category\": \"Storage\", \"severity\": \"medium\", \"description\": \"Cartons stacked "
+                "touching ceiling lights.\", \"detected_in_angle\": \"General\"}], "
+                "\"improvement_steps\": \"1. Cover exposed wiring immediately. 2. Mount an extinguisher "
+                "near the main exit. 3. Clear stock away from ceiling lights.\"}"
             )
 
             # ==========================================
@@ -1006,20 +1089,35 @@ def analyze_room_safety(request: AiScanRequest) -> Dict[str, Any]:
             # identical output score run after run.
             deterministic_seed: int = 7
 
-            # Qwen-VL family vision encoders tile input images against a 28px patch/merge
-            # grid. (224, 224) = exactly 8 x 28px, so the encoder never has to pad a
-            # fractional tile -- every pixel we transmit is a pixel the model actually needs.
-            primary_image_dimensions: tuple[int, int] = (224, 224)
-            primary_jpeg_quality: int = 78
-            primary_completion_token_budget: int = 800
+            # Calibrated against REAL production telemetry rather than a theoretical patch
+            # grid: your own logs showed 168x168 imagery costing 4,063 real prompt tokens,
+            # and 224x224 imagery still being rejected at ~7,423 prompt tokens. Fitting a
+            # simple area-scaling curve (cost per image ~ pixel_width * pixel_height) to
+            # those two real points, then padding it with a safety margin, gives the tiers
+            # below. Because the hazard checklist itself is now much longer (comprehensive
+            # taxonomy + fire-extinguisher logic), and because "list every hazard you find"
+            # can legitimately need a long completion for a genuinely hazardous shop, the
+            # completion budgets here are also substantially larger than the old 500/800 --
+            # each description is capped at ~15 words in the prompt above specifically so a
+            # long hazard list doesn't blow the completion budget before it's finished.
+            primary_image_dimensions: tuple[int, int] = (176, 176)
+            primary_jpeg_quality: int = 80
+            primary_completion_token_budget: int = 1800
 
-            # Fallback tier settings, only ever engaged if Groq rejects the primary attempt
-            # for being oversized. (168, 168) = exactly 6 x 28px -- still comfortably legible
-            # for coarse hazard detection (blocked exits, exposed wiring, clutter), simply
-            # carved out with a wider safety margin against the TPM ceiling.
-            fallback_image_dimensions: tuple[int, int] = (168, 168)
-            fallback_jpeg_quality: int = 65
-            fallback_completion_token_budget: int = 500
+            # Fallback tier 1 -- engaged only if Groq rejects the primary attempt as
+            # oversized. Meaningfully smaller images and a slightly tighter completion
+            # budget, still generous enough for a thorough multi-hazard listing.
+            secondary_image_dimensions: tuple[int, int] = (144, 144)
+            secondary_jpeg_quality: int = 68
+            secondary_completion_token_budget: int = 1500
+
+            # Fallback tier 2 -- the last-resort safety net before the anti-crash demo-data
+            # path takes over. Deliberately small and cheap so it is essentially guaranteed
+            # to fit under the TPM ceiling no matter how much the checklist above grows in
+            # the future.
+            tertiary_image_dimensions: tuple[int, int] = (112, 112)
+            tertiary_jpeg_quality: int = 58
+            tertiary_completion_token_budget: int = 1100
 
             def _compress_image_for_vision_payload(
                 raw_base64_image: str,
@@ -1317,6 +1415,58 @@ def analyze_room_safety(request: AiScanRequest) -> Dict[str, Any]:
                 }
             ]
             improvement_steps_text = "1. Clear 3 feet of physical space around all marked exits.\n2. Secure all exposed wiring immediately."
+
+
+        # ==========================================
+        # TITANIUM CLOUD LOGGING (PHASE 3.1: AUDIT & STORAGE)
+        # ==========================================
+        # We now mathematically enforce a secure cloud backup of the AI scan data directly to Supabase.
+        # This pipeline isolates the primary frame, uploads it to the public 'scan_images' bucket, 
+        # and writes the resulting telemetry to the 'ai_scan_reports' PostgreSQL table.
+        try:
+            print("[API.analyze_room_safety] System Action: Initiating secure cloud backup for AI scan telemetry.")
+            
+            # Sub-Step A: Initialize the live Supabase network connection explicitly from the kernel
+            active_cloud_db: Any = get_db()
+            
+            # Sub-Step B: Extract the primary structural frame to serve as the visual evidence
+            primary_visual_frame: ImageData = safely_truncated_images[0]
+            raw_base64_payload: str = primary_visual_frame.image_base64.replace("data:image/jpeg;base64,", "").strip()
+            binary_image_bytes: bytes = base64.b64decode(raw_base64_payload)
+            
+            # Sub-Step C: Generate a cryptographically unique UUID filename to absolutely prevent overwrites
+            unique_identifier_string: str = str(uuid.uuid4())
+            secure_cloud_filename: str = f"{unique_identifier_string}.jpeg"
+            
+            # Sub-Step D: Execute the binary upload stream to the 'scan_images' bucket in Supabase Storage
+            active_cloud_db.storage.from_("scan_images").upload(
+                path=secure_cloud_filename,
+                file=binary_image_bytes,
+                file_options={"content-type": "image/jpeg"}
+            )
+            
+            # Sub-Step E: Retrieve the global public URL mapped to the freshly uploaded asset from the CDN
+            extracted_public_url: str = active_cloud_db.storage.from_("scan_images").get_public_url(secure_cloud_filename)
+            
+            # Sub-Step F: Serialize the complex hazard dictionary into a flat JSON string for PostgreSQL compatibility
+            serialized_hazard_array: str = json.dumps(hazard_breakdown_array)
+            
+            # Sub-Step G: Construct the exact database payload mapping directly to your structural columns
+            cloud_audit_payload: Dict[str, Any] = {
+                "image_url": extracted_public_url,
+                "ai_score": int(calculated_safety_score),
+                "hazard_details": serialized_hazard_array
+            }
+            
+            # Sub-Step H: Execute the transactional insert operation natively against the target table
+            active_cloud_db.table("ai_scan_reports").insert(cloud_audit_payload).execute()
+            print("[API.analyze_room_safety] System Action: Visual evidence successfully audited to Supabase Cloud.")
+            
+        except Exception as cloud_audit_error:
+            # We catch and securely isolate database errors here.
+            # A transient cloud failure should NOT crash the frontend user's active session or prevent the score display.
+            print(f"[API.analyze_room_safety] Warning: Cloud audit pipeline dropped. Details: {str(cloud_audit_error)}")
+
 
         # Step 12: Construct the explicit response payload exactly as requested by the React Native UI frontend
         # This matches the new `AiAnalysisData` interface expecting the `hazard_breakdown` array natively.

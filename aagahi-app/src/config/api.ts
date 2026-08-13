@@ -1,1 +1,1 @@
-export const API_BASE_URL = 'http://192.168.88.107:8000'; 
+export const API_BASE_URL = 'https://aagahi-backend.onrender.com';

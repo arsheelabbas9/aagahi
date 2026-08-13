@@ -20,6 +20,8 @@
  *   timeout locks to prevent infinite loading spinners on bad connections.
  * 
  * @upgrades_in_this_build
+ * - BUG FIX: Patched the fatal AST parsing error caused by an unclosed `getSeverityColor` block.
+ * - NEW UI LOGIC: Integrated the JSX required to render the `activeFixSuggestions` action buttons.
  * - STICKY FOOTER FIX: The final "Submit for AI Analysis" button has been 
  *   mathematically extracted from the `ScrollView` and anchored to a flex-bottom 
  *   container. This ensures the action button is perpetually visible and accessible 
@@ -45,6 +47,7 @@ import {
   Platform,
   Image,
   ScrollView,
+  Linking,
 } from 'react-native';
 
 import { 
@@ -206,6 +209,85 @@ interface CapturedRoomImage {
 }
 
 // ==========================================
+// NEW: "CLOSED LOOP" FIX-SUGGESTION ENGINE
+// ==========================================
+
+/**
+ * @interface FixSuggestionRule
+ * @description Describes ONE actionable fix the app can recommend after an AI Vision
+ * report comes back — a hazard category, matched against the report's text, paired
+ * with a vendor/service search link the shopkeeper can tap to actually go solve it.
+ *
+ * IMPORTANT CAVEAT: The backend does not yet return a structured hazard "type" field
+ * (e.g. `hazard_type: 'electrical'`) — it only returns free-text descriptions. Until
+ * that lands in `api.py`, this rule set works by scanning the report's combined text
+ * for keywords. This is a heuristic, not a guarantee: it can miss a hazard phrased
+ * unusually, or occasionally match text that only mentions a term in passing. When the
+ * backend adds explicit hazard-type tagging, `deriveFixSuggestionsFromReport` below is
+ * the only function that needs to change to consume it directly instead of guessing.
+ */
+interface FixSuggestionRule {
+  id: string;
+  matchKeywords: string[];
+  title: string;
+  description: string;
+  actionLabel: string;
+  externalUrl: string;
+}
+
+/**
+ * @constant FIX_SUGGESTION_RULES
+ * @description The configured set of hazard-to-solution mappings. Each rule's
+ * `externalUrl` currently points to an OLX Pakistan search results page
+ * (`https://www.olx.com.pk/items/q-{query}`), since OLX is the marketplace the
+ * shopkeeper explicitly asked to redirect to. Edit or add entries here to change
+ * which vendors/marketplaces get suggested — no other code needs to change.
+ */
+const FIX_SUGGESTION_RULES: FixSuggestionRule[] = [
+  {
+    id: 'electrical',
+    matchKeywords: [
+      'wire', 'wiring', 'electric', 'cable', 'circuit', 'switchboard',
+      'panel', 'short circuit', 'sparking', 'exposed wire',
+    ],
+    title: 'Electrical Hazard',
+    description: 'Exposed or damaged wiring should be inspected and repaired by a licensed electrician before it becomes a fire risk.',
+    actionLabel: 'Hire an Electrician',
+    externalUrl: 'https://www.olx.com.pk/items/q-electrician-karachi',
+  },
+  {
+    id: 'fire_extinguisher',
+    matchKeywords: [
+      'extinguisher', 'fire safety equipment', 'no extinguisher', 'missing extinguisher',
+    ],
+    title: 'Missing or Inaccessible Fire Extinguisher',
+    description: 'Every commercial space should have a working, reachable fire extinguisher — this is one of the fastest fixes on this list.',
+    actionLabel: 'Buy a Fire Extinguisher',
+    externalUrl: 'https://www.olx.com.pk/items/q-fire-extinguisher',
+  },
+  {
+    id: 'blocked_exit',
+    matchKeywords: [
+      'blocked exit', 'obstructed', 'blocked doorway', 'exit route', 'egress', 'obstruction', 'blocked path',
+    ],
+    title: 'Blocked Exit Route',
+    description: 'Clearing stock, furniture, or clutter from exit paths is critical so people can evacuate quickly in an emergency.',
+    actionLabel: 'Hire Help to Clear the Space',
+    externalUrl: 'https://www.olx.com.pk/items/q-labour-karachi',
+  },
+  {
+    id: 'emergency_lighting',
+    matchKeywords: [
+      'emergency light', 'no lighting', 'lighting is not', 'dark exit', 'bulb is not working',
+    ],
+    title: 'Emergency Lighting Issue',
+    description: 'Functional emergency lighting helps people find the exit safely during a power outage or a fire.',
+    actionLabel: 'Buy Emergency Lighting',
+    externalUrl: 'https://www.olx.com.pk/items/q-emergency-light',
+  },
+];
+
+// ==========================================
 // COMPONENT: HARDWARE SCANNER MODULE
 // ==========================================
 
@@ -269,12 +351,23 @@ export default function ScannerScreen(): React.JSX.Element {
   const setIsCapturingFrame: React.Dispatch<React.SetStateAction<boolean>> = isCapturingFrameTuple[1];
 
   // ==========================================
+  // NEW: FIX-SUGGESTION PANEL STATE
+  // ==========================================
+
+  const isShowingFixSuggestionsTuple = useState<boolean>(false);
+  const isShowingFixSuggestions: boolean = isShowingFixSuggestionsTuple[0];
+  const setIsShowingFixSuggestions: React.Dispatch<React.SetStateAction<boolean>> = isShowingFixSuggestionsTuple[1];
+
+  // ==========================================
   // HARDWARE PERMISSION EVALUATION
   // ==========================================
 
-  const isPermissionResolved: boolean = permission !== null;
-  
-  if (!isPermissionResolved) {
+  // NOTE: We check `permission === null` directly (rather than through an
+  // intermediate boolean) because TypeScript's control-flow narrowing cannot
+  // follow the null-check through a separately assigned variable — without
+  // this direct check, `permission.granted` below would report "possibly
+  // null" even though this guard clause has already returned in that case.
+  if (permission === null) {
     return (
       <View style={styles.centerContainer}>
         <ActivityIndicator size="large" color={COLORS.primary} />
@@ -686,6 +779,7 @@ export default function ScannerScreen(): React.JSX.Element {
   /**
    * @function getSeverityColor
    * @description Translates the analytical severity string payload into a specific UI hex code.
+   * BUG FIX: Previously lacked a closing bracket and try/catch block, which caused VS Code AST parsing errors.
    * 
    * @param {'low' | 'medium' | 'high' | 'critical'} severity - The input string classification.
    * @returns {string} The designated explicit hexadecimal string.
@@ -704,8 +798,89 @@ export default function ScannerScreen(): React.JSX.Element {
         default:
           return COLORS.textMuted;
       }
-    } catch (evaluationError: unknown) {
-        return COLORS.textMuted; // Safe mathematical fallback
+    } catch (error: unknown) {
+      console.error('[ScannerScreen.getSeverityColor] Fallback executed due to parsing error:', error);
+      return COLORS.textMuted;
+    }
+  };
+
+  /**
+   * @function deriveFixSuggestionsFromReport
+   * @description NEW: Reads through everything the AI report said about a room —
+   * both the structured `hazard_breakdown` array (if the backend returned one) and
+   * the plain-text `identified_hazards` / `improvement_steps` fallback fields — and
+   * matches that combined text against `FIX_SUGGESTION_RULES` by keyword. This is
+   * how "we found a problem" becomes "here's how to actually go fix it."
+   *
+   * See the caveat on `FixSuggestionRule` above: this is keyword matching against
+   * free text, not a guaranteed classification. It intentionally errs toward
+   * matching broadly rather than missing a real hazard.
+   *
+   * @param {AiAnalysisData} aiData - The completed AI analysis result to scan.
+   * @returns {FixSuggestionRule[]} Every configured rule whose keywords were found
+   *          in the report text, in the order they're defined in FIX_SUGGESTION_RULES.
+   */
+  const deriveFixSuggestionsFromReport = (aiData: AiAnalysisData): FixSuggestionRule[] => {
+    try {
+      // Step 1: Collect every fragment of free text the backend returned that could
+      // mention a hazard, regardless of whether it came via the newer structured
+      // hazard_breakdown array or the older plain-text fields.
+      const textFragments: string[] = [];
+
+      const hasHazardBreakdown: boolean = Array.isArray(aiData.hazard_breakdown);
+      if (hasHazardBreakdown) {
+        aiData.hazard_breakdown!.forEach((hazardNode: HazardDetail) => {
+          textFragments.push(hazardNode.category);
+          textFragments.push(hazardNode.description);
+        });
+      }
+
+      if (aiData.identified_hazards) {
+        textFragments.push(aiData.identified_hazards);
+      }
+
+      if (aiData.improvement_steps) {
+        textFragments.push(aiData.improvement_steps);
+      }
+
+      const combinedLowerCaseText: string = textFragments.join(' ').toLowerCase();
+
+      // Step 2: Match each configured rule's keyword list against the combined text.
+      const matchedRules: FixSuggestionRule[] = FIX_SUGGESTION_RULES.filter(
+        (rule: FixSuggestionRule) => {
+          const isRuleMatched: boolean = rule.matchKeywords.some(
+            (keyword: string) => combinedLowerCaseText.includes(keyword)
+          );
+          return isRuleMatched;
+        }
+      );
+
+      return matchedRules;
+
+    } catch (matchingError: unknown) {
+      console.error('[ScannerScreen.deriveFixSuggestionsFromReport] Keyword matching failed: ', matchingError);
+      return []; // Safely fail closed — an empty suggestion list, not a crash
+    }
+  };
+
+  /**
+   * @function handleOpenExternalFixLink
+   * @description NEW: Opens a suggested vendor/marketplace URL (e.g. an OLX Pakistan
+   * search) in the device's default browser, so the shopkeeper can act on a hazard
+   * immediately instead of just reading about it.
+   *
+   * @async
+   * @param {string} targetUrl - The absolute external URL to open.
+   */
+  const handleOpenExternalFixLink = async (targetUrl: string): Promise<void> => {
+    try {
+      const canDeviceOpenUrl: boolean = await Linking.canOpenURL(targetUrl);
+      if (!canDeviceOpenUrl) {
+        throw new Error(`Device reported it cannot open this URL: ${targetUrl}`);
+      }
+      await Linking.openURL(targetUrl);
+    } catch (linkError: unknown) {
+      console.error('[ScannerScreen.handleOpenExternalFixLink] Failed to open external link: ', linkError);
     }
   };
 
@@ -795,6 +970,7 @@ export default function ScannerScreen(): React.JSX.Element {
       setCapturedRoomImages([]);
       setCaptureStepIndex(0);
       setIsReviewingCaptures(false);
+      setIsShowingFixSuggestions(false);
     } catch (error: unknown) {
       console.error("[ScannerScreen.resetScannerState] Buffer purge failed: ", error);
     }
@@ -810,6 +986,13 @@ export default function ScannerScreen(): React.JSX.Element {
   const hasActiveResult: boolean = scanResult !== null;
   const isCurrentlyInReviewGrid: boolean = isAiMode && isReviewingCaptures;
   const shouldRenderHardwareFeed: boolean = !hasActiveResult && !isCurrentlyInReviewGrid;
+
+  // NEW: Only compute keyword-matched fix suggestions when there's an actual
+  // successful AI report to read — avoids running the matcher on every render.
+  const hasSuccessfulAiReport: boolean = isAiMode && scanResult?.type === 'success' && scanResult.aiData !== undefined;
+  const activeFixSuggestions: FixSuggestionRule[] = hasSuccessfulAiReport
+    ? deriveFixSuggestionsFromReport(scanResult!.aiData!)
+    : [];
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -1049,6 +1232,25 @@ export default function ScannerScreen(): React.JSX.Element {
                   {scanResult.aiData.improvement_steps || 'No specific improvement steps were returned by the analysis engine.'}
                 </Text>
               </View>
+
+              {/* ========================================== */}
+              {/* NEW JSX INTEGRATION: FIX SUGGESTION ACTION BUTTONS */}
+              {/* ========================================== */}
+              {activeFixSuggestions.length > 0 && (
+                <View style={{ width: '100%', marginBottom: 16 }}>
+                  <Text style={[styles.aiDetailHeader, { marginBottom: 10 }]}>Take Immediate Action:</Text>
+                  {activeFixSuggestions.map((suggestion: FixSuggestionRule) => (
+                    <TouchableOpacity
+                      key={suggestion.id}
+                      style={[styles.actionButton, { backgroundColor: '#2B2D42', marginBottom: 10 }]} 
+                      activeOpacity={0.85}
+                      onPress={() => handleOpenExternalFixLink(suggestion.externalUrl)}
+                    >
+                      <Text style={styles.actionButtonText}>{suggestion.actionLabel}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
 
               <TouchableOpacity
                 style={styles.actionButton}

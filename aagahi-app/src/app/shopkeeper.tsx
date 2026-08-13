@@ -48,6 +48,21 @@ interface ComplianceApiResponse {
   detail?: string;
 }
 
+/**
+ * Defines the strict structure of the outgoing checklist payload.
+ * UPGRADED: Expanded to include 3 new critical real-world fire safety checks.
+ */
+interface ChecklistPayload {
+  shop_id: number;
+  extinguisher_operational: boolean;
+  wiring_inspected: boolean;
+  exits_unobstructed: boolean;
+  emergency_lighting: boolean;
+  flammables_isolated: boolean;
+  gas_secured: boolean;
+  ventilation_clear: boolean;
+}
+
 // System Theme instantiation explicitly typed and strictly assigned to memory
 const COLORS: ThemeColors = {
   background: '#F4F7F9',
@@ -77,6 +92,10 @@ const API_COMPLIANCE_URL: string = `${API_BASE_URL}/api/shops/compliance`;
  * update mandatory fire safety checklists, calculate live compliance scores, 
  * and inspect their unique, ID-bound cryptographic QR identity hash (Pillar 4).
  * 
+ * UPGRADED: The fire safety checklist now utilizes an expanded, easy-to-read English 
+ * vocabulary ensuring perfect comprehension for local vendors, while capturing deeper
+ * environmental hazards for the engine.
+ * 
  * @returns {React.JSX.Element} The strictly typed, rendered Shopkeeper Interface.
  */
 export default function ShopkeeperScreen(): React.JSX.Element {
@@ -87,22 +106,29 @@ export default function ShopkeeperScreen(): React.JSX.Element {
 
   // --- Explicitly Typed State Management ---
   
-  // Tracks individual infrastructure checklist statuses for real-time score calculation
+  // CORE METRICS: Tracks individual infrastructure checklist statuses for real-time score calculation
   const [extinguisherOperational, setExtinguisherOperational] = useState<boolean>(true);
   const [wiringInspected, setWiringInspected] = useState<boolean>(true);
   const [exitsUnobstructed, setExitsUnobstructed] = useState<boolean>(true);
   const [emergencyLightingActive, setEmergencyLightingActive] = useState<boolean>(true);
 
-  // Tracks the live calculated safety score retrieved from the backend engine
+  // EXPANDED METRICS: New real-world parameters targeting local shop constraints natively
+  const [flammablesIsolated, setFlammablesIsolated] = useState<boolean>(true);
+  const [gasSecured, setGasSecured] = useState<boolean>(true);
+  const [ventilationClear, setVentilationClear] = useState<boolean>(true);
+
+  // SYSTEM METRICS: Tracks the live calculated safety score retrieved from the backend engine
   const [currentScore, setCurrentScore] = useState<number>(100);
   
-  // Tracks network submission loading status to prevent double-tap race conditions
+  // SYSTEM METRICS: Tracks network submission loading status to prevent double-tap race conditions
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   // PILLAR 4 STATE: Generate a cryptographic QR hash string representing the merchant's digital compliance identity.
   // We mathematically bind the hash to the actual logged-in user ID to ensure complete database correlation.
-  const dynamicUserIdString: string = user ? String(user.id) : "system_default";
-  const identityBoundHash: string = `aagahi_merch_${dynamicUserIdString}_5605f6e80bcecc14aab82b015cc20b13`;
+  const isUserValid: boolean = user !== null && user !== undefined;
+  const rawUserIdString: string = isUserValid ? String(user!.id) : "system_default";
+  
+  const identityBoundHash: string = `aagahi_merch_${rawUserIdString}_5605f6e80bcecc14aab82b015cc20b13`;
   const [shopCryptographicHash] = useState<string>(identityBoundHash);
 
   /**
@@ -119,34 +145,42 @@ export default function ShopkeeperScreen(): React.JSX.Element {
       setIsSubmitting(true);
       console.log("[ShopkeeperScreen.handleChecklistUpdate] Checklist update sequence initiated.");
 
-      // Step 2: Extract and cast the actual merchant ID from the global AuthContext
-      const rawUserId: string | number = user ? user.id : 1;
+      // Step 2: Extract and cast the actual merchant ID from the global AuthContext safely
+      const rawUserId: string | number = isUserValid ? user!.id : 1;
       
       // Parse the ID safely into an integer to perfectly match the backend PostgreSQL schema
-      const parsedShopId: number = typeof rawUserId === 'number' 
-        ? rawUserId 
+      const isIdNumberType: boolean = typeof rawUserId === 'number';
+      const parsedShopId: number = isIdNumberType 
+        ? (rawUserId as number) 
         : parseInt(String(rawUserId), 10);
 
-      // Step 3: Unpack and construct the explicit JSON payload matching the Pydantic schema
-      const requestPayloadObject = {
+      // Step 3: Unpack and construct the explicit JSON payload matching the upgraded Pydantic schema
+      const requestPayloadObject: ChecklistPayload = {
         shop_id: parsedShopId,
         extinguisher_operational: extinguisherOperational,
         wiring_inspected: wiringInspected,
         exits_unobstructed: exitsUnobstructed,
         emergency_lighting: emergencyLightingActive,
+        flammables_isolated: flammablesIsolated,
+        gas_secured: gasSecured,
+        ventilation_clear: ventilationClear,
       };
       
       // Serialize the payload object into a transmission-ready UTF-8 string
       const requestPayloadString: string = JSON.stringify(requestPayloadObject);
 
       // Step 4: Execute the network PUT request to the Python compliance engine API
-      const response: Response = await fetch(API_COMPLIANCE_URL, {
+      const networkHeaders: HeadersInit = {
+        'Content-Type': 'application/json',
+      };
+      
+      const fetchOptions: RequestInit = {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: networkHeaders,
         body: requestPayloadString,
-      });
+      };
+
+      const response: Response = await fetch(API_COMPLIANCE_URL, fetchOptions);
 
       // Step 5: Unpack the network stream into a raw JSON object safely
       const rawJsonResponse: any = await response.json();
@@ -193,33 +227,49 @@ export default function ShopkeeperScreen(): React.JSX.Element {
 
   /**
    * Sub-render helper to construct interactive compliance checklist toggle rows.
-   * Isolates the mapping logic to ensure strict parameter definitions.
+   * Isolates the mapping logic to ensure strict parameter definitions and adds mathematical 
+   * safety against invalid state mutation attempts.
    * 
-   * @param {string} label - The descriptive text for the infrastructure item.
-   * @param {boolean} value - The current boolean state of the item.
+   * @param {string} label - The highly readable, clear descriptive text for the infrastructure item.
+   * @param {boolean} value - The current boolean state of the checklist item.
    * @param {React.Dispatch<React.SetStateAction<boolean>>} setter - The state mutation function.
-   * @returns {React.JSX.Element} The rendered touchable toggle row.
+   * @returns {React.JSX.Element} The strictly rendered touchable toggle row.
    */
   const renderChecklistRow = (
     label: string, 
     value: boolean, 
     setter: React.Dispatch<React.SetStateAction<boolean>>
   ): React.JSX.Element => {
-    return (
-      <TouchableOpacity 
-        style={styles.checkboxRow}
-        activeOpacity={0.8}
-        onPress={() => setter(!value)}
-        disabled={isSubmitting}
-      >
-        <Text style={styles.checkboxLabel}>{label}</Text>
-        <MaterialCommunityIcons 
-          name={value ? "checkbox-marked-circle" : "checkbox-blank-outline"} 
-          size={24} 
-          color={value ? COLORS.success : COLORS.textMuted} 
-        />
-      </TouchableOpacity>
-    );
+    try {
+      const activeIconName: any = value ? "checkbox-marked-circle" : "checkbox-blank-outline";
+      const activeColorHex: string = value ? COLORS.success : COLORS.textMuted;
+
+      return (
+        <TouchableOpacity 
+          style={styles.checkboxRow}
+          activeOpacity={0.8}
+          onPress={() => setter(!value)}
+          disabled={isSubmitting}
+        >
+          <View style={styles.checklistTextContainer}>
+            <Text style={styles.checkboxLabel}>{label}</Text>
+          </View>
+          <MaterialCommunityIcons 
+            name={activeIconName} 
+            size={24} 
+            color={activeColorHex} 
+          />
+        </TouchableOpacity>
+      );
+    } catch (renderError: unknown) {
+      // Fallback UI to prevent application crash on specific row failure
+      console.error("[ShopkeeperScreen.renderChecklistRow] Failed to construct row payload: ", renderError);
+      return (
+        <View style={styles.checkboxRow}>
+            <Text style={styles.checkboxLabel}>Render Failure: Safety Item</Text>
+        </View>
+      );
+    }
   };
 
   // ==========================================
@@ -311,22 +361,28 @@ export default function ShopkeeperScreen(): React.JSX.Element {
           </TouchableOpacity>
         </View>
 
-        {/* Infrastructure Checklist Section */}
+        {/* Infrastructure Checklist Section (EXPANDED & SIMPLIFIED ENGLISH) */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>Fire Safety Checklist</Text>
+            <Text style={styles.cardTitle}>Monthly Safety Checklist</Text>
             <MaterialCommunityIcons name="clipboard-check-outline" size={24} color={COLORS.textDark} />
           </View>
           <Text style={styles.cardDescription}>
-            Update your monthly fire extinguisher and structural integrity reports to maintain compliance badges.
+            Check all the rules your shop currently follows to update your live safety score.
           </Text>
 
           {/* Interactive Checklist Toggle Matrix */}
           <View style={styles.checklistContainer}>
-            {renderChecklistRow("Fire Extinguishers Operational", extinguisherOperational, setExtinguisherOperational)}
-            {renderChecklistRow("Electrical Wiring Inspected", wiringInspected, setWiringInspected)}
-            {renderChecklistRow("Emergency Exits Unobstructed", exitsUnobstructed, setExitsUnobstructed)}
-            {renderChecklistRow("Backup Emergency Lighting Active", emergencyLightingActive, setEmergencyLightingActive)}
+            {/* Core Metrics mapped to Easy English */}
+            {renderChecklistRow("Fire Extinguisher is Present & Working", extinguisherOperational, setExtinguisherOperational)}
+            {renderChecklistRow("No Exposed Wires or Overloaded Sockets", wiringInspected, setWiringInspected)}
+            {renderChecklistRow("Exit Routes are Completely Clear of Clutter", exitsUnobstructed, setExitsUnobstructed)}
+            {renderChecklistRow("Emergency Backup Lights are Tested & Active", emergencyLightingActive, setEmergencyLightingActive)}
+            
+            {/* New Advanced Environmental Metrics mapped to Easy English */}
+            {renderChecklistRow("Cardboard & Chemicals Kept Away From Heat", flammablesIsolated, setFlammablesIsolated)}
+            {renderChecklistRow("Gas Cylinders are Upright & Safely Secured", gasSecured, setGasSecured)}
+            {renderChecklistRow("Exhaust Fans & AC Vents are Unblocked", ventilationClear, setVentilationClear)}
           </View>
 
           <TouchableOpacity 
@@ -494,14 +550,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
+  },
+  checklistTextContainer: {
+    flex: 1,
+    paddingRight: 16,
   },
   checkboxLabel: {
     fontSize: 14,
     color: COLORS.textDark,
-    fontWeight: '500',
+    fontWeight: '600',
+    lineHeight: 20,
   },
   actionButton: { 
     backgroundColor: COLORS.primary, 
