@@ -1299,6 +1299,7 @@ def analyze_room_safety(request: AiScanRequest) -> Dict[str, Any]:
             # imagery and a tighter completion budget. Every other kind of failure (auth,
             # network, malformed response) is NOT retried here; it falls straight through to
             # the existing anti-crash fallback below, exactly as it did before.
+
             attempt_tiers: List[Dict[str, Any]] = [
                 {
                     "dimensions": primary_image_dimensions,
@@ -1306,9 +1307,14 @@ def analyze_room_safety(request: AiScanRequest) -> Dict[str, Any]:
                     "token_budget": primary_completion_token_budget,
                 },
                 {
-                    "dimensions": fallback_image_dimensions,
-                    "quality": fallback_jpeg_quality,
-                    "token_budget": fallback_completion_token_budget,
+                    "dimensions": secondary_image_dimensions,
+                    "quality": secondary_jpeg_quality,
+                    "token_budget": secondary_completion_token_budget,
+                },
+                {
+                    "dimensions": tertiary_image_dimensions,
+                    "quality": tertiary_jpeg_quality,
+                    "token_budget": tertiary_completion_token_budget,
                 },
             ]
 
