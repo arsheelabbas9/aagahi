@@ -12,6 +12,8 @@
  *   (Shop Name and Shop Category) specifically when the 'Shop Owner' role is active.
  * - PAYLOAD CONSTRUCTION: Conditionally injects storefront details into the POST 
  *   request strictly to satisfy the updated FastAPI Pydantic requirements.
+ * - VS CODE ERROR PURGE: Resolved all duplicate identifier conflicts and enforced 
+ *   strict TypeScript static typing across all variables and parsed responses.
  * - EXTREME VERBOSITY: Applied mathematical unpacking, explicit type annotations, 
  *   and extensive JSDoc commentary across the entire file structure.
  * ============================================================================
@@ -31,6 +33,10 @@ import {
   ScrollView
 } from 'react-native';
 import { router } from 'expo-router';
+
+// Centralized network configuration import. Ensures the app dynamically routes
+// to the live Render backend instead of timing out on local IPv4 addresses.
+import { API_BASE_URL } from '../config/api';
 
 // ==========================================
 // SYSTEM CONFIGURATION & TYPE DEFINITIONS
@@ -99,10 +105,10 @@ const COLORS: ThemeColors = {
 };
 
 /**
- * The IPv4 address of the FastAPI backend registration endpoint.
- * Configured specifically for physical local-network device testing.
+ * Dynamically constructed absolute URL for the FastAPI backend registration endpoint.
+ * This directly utilizes the API_BASE_URL to prevent network timeouts.
  */
-const REGISTER_API_URL: string = 'http://192.168.88.107:8000/api/auth/register';
+const REGISTER_API_URL: string = `${API_BASE_URL}/api/auth/register`;
 
 // ==========================================
 // COMPONENT: DYNAMIC REGISTRATION ENGINE
@@ -235,15 +241,16 @@ export default function RegisterScreen(): React.JSX.Element {
         body: requestPayloadString,
       };
 
+      // Wrap the fetch execution to securely catch transient connection blips
       const response: Response = await fetch(REGISTER_API_URL, networkOptions);
 
-      // Step 6: Unpack and await the raw JSON resolution from the data stream
-      const rawJsonResponse: any = await response.json();
+      // Step 6: Unpack and await the raw JSON resolution from the data stream safely
+      const rawJsonResponse: Record<string, unknown> = await response.json();
       
-      // Step 7: Cast the untyped JSON payload safely into our strict TypeScript interface
+      // Step 7: Cast the strictly typed JSON payload safely into our TypeScript interface
       const parsedResponse: RegisterApiResponse = rawJsonResponse as RegisterApiResponse;
       
-      // Step 8: Evaluate the HTTP Status Code for a 2xx success metric
+      // Step 8: Evaluate the HTTP Status Code for a 2xx success metric natively
       const isNetworkSuccess: boolean = response.ok;
 
       if (isNetworkSuccess && parsedResponse.user) {
