@@ -1,3 +1,21 @@
+"""
+============================================================================
+@file api.py
+@title Aagahi Core Routing & Hazard Orchestration API
+@description
+Central Nervous System for Spatial Hazard Tracking, Routing, Identity Management, 
+and AI Telemetry Logging. This module integrates Pillar 1 (Authentication), 
+Pillar 2 (Community Chat), Pillar 3 (Crowdfunding), and Pillar 4 (Merchant Compliance).
+
+@architectural_notes
+- VERSION: 3.3.1 (UUID-Safe Compliance Mutation & Single-Letter Variable Purge)
+- STORAGE: Integrated direct Supabase storage pipeline for AI evidence.
+- SECURITY: Implemented strict type enforcement for all Pydantic schemas.
+- COMPLIANCE: Direct PostgREST mutations now strictly target `owner_id` UUIDs 
+  to mathematically guarantee accurate safety score updates without 404 drops.
+============================================================================
+"""
+
 import os
 import json
 import base64
@@ -13,7 +31,7 @@ from PIL import Image
 # Internal Module Imports
 from spatial_engine import SpatialEngine
 from repositories import StoreRepository, UserRepository, HazardRepository, ChatRepository, FundRepository
-from kernel import get_db  # Imported to facilitate direct database access for the new AI Storage Pipeline
+from kernel import get_db  # Imported to facilitate direct database access for the new AI Storage Pipeline and Compliance Mutations
 
 # ==========================================
 # SYSTEM INITIALIZATION & ORCHESTRATION
@@ -24,7 +42,7 @@ from kernel import get_db  # Imported to facilitate direct database access for t
 app: FastAPI = FastAPI(
     title="Aagahi Routing & Hazard API",
     description="Central Nervous System for Spatial Hazard Tracking, Routing, Identity Management, and AI Telemetry Logging.",
-    version="3.3.0" # Version bumped to reflect Phase 3.3 Shopkeeper Database Auto-Registration & Math Engine
+    version="3.3.1" # Version bumped to reflect Phase 3.3.1 Shopkeeper Direct Owner_ID Mutation and Variable Purge
 )
 
 # ==========================================
@@ -68,7 +86,7 @@ class Coordinates(BaseModel):
 class LoginRequest(BaseModel):
     """
     Data validation schema for incoming authentication requests.
-    Used by the Identity Gatekeeper to validate existing credentials.
+    Used by the Identity Gatekeeper to validate existing credentials prior to hashing verification.
     """
     email: str
     password: str
@@ -91,7 +109,7 @@ class RegisterRequest(BaseModel):
 class HazardCoordinate(BaseModel):
     """
     Data validation schema for an exact geographic coordinate.
-    Separated to enforce strict typing for nested array payloads.
+    Separated to enforce strict typing for nested array payloads inside larger reporting schemas.
     """
     lat: float
     lng: float
@@ -100,7 +118,7 @@ class HazardReport(BaseModel):
     """
     Data validation schema for real-time field incident reporting.
     UPGRADED FOR PILLAR 5: Utilizes an array of coordinates to support 
-    both Point hazards and LineString road blockages natively.
+    both Point hazards and LineString road blockages natively within PostGIS.
     """
     reporter_id: str
     hazard_type: str
@@ -110,8 +128,9 @@ class HazardReport(BaseModel):
 class ChecklistSubmission(BaseModel):
     """
     Data validation schema for shopkeeper fire safety checklist submissions.
-    UPGRADED (PHASE 3.3): Enforces explicit boolean status checks for the expanded 
+    UPGRADED (PHASE 3.3.1): Enforces explicit boolean status checks for the expanded 
     7-point infrastructure components to dynamically calculate accurate real-time safety scores.
+    CRITICAL FIX: shop_id explicitly typed as string to prevent UUID corruption during serialization.
     """
     shop_id: str
     extinguisher_operational: bool
@@ -126,7 +145,7 @@ class ChecklistSubmission(BaseModel):
 class ChatMessagePayload(BaseModel):
     """
     Data validation schema for community chat messages (Pillar 2).
-    Captures geographic routing boundaries and verified identity markers.
+    Captures geographic routing boundaries and verified identity markers for secure broadcasting.
     """
     channel: str
     user_id: str
@@ -183,14 +202,14 @@ def health_check() -> Dict[str, str]:
         # Construct and unpack the status response payload explicitly into memory
         response_payload: Dict[str, str] = {
             "status": "Aagahi API is Online",
-            "version": "3.3.0"
+            "version": "3.3.1"
         }
         
         return response_payload
         
-    except Exception as e:
+    except Exception as system_exception:
         # Catch unforeseen server-level memory errors immediately and wrap them in an HTTP exception
-        error_message: str = f"Critical API health failure: {str(e)}"
+        error_message: str = f"Critical API health failure: {str(system_exception)}"
         print(f"[API.health_check] ERROR: {error_message}")
         raise HTTPException(status_code=500, detail=error_message)
 
@@ -246,9 +265,9 @@ def login(request: LoginRequest) -> Dict[str, Any]:
     except HTTPException:
         # Re-raise known HTTP Exceptions to preserve accurate 4xx status codes for the Expo UI
         raise
-    except Exception as e:
+    except Exception as system_exception:
         # Catch unexpected database connection or hashing exceptions to prevent complete server crashes
-        error_message: str = f"Internal Server Error during authentication: {str(e)}"
+        error_message: str = f"Internal Server Error during authentication: {str(system_exception)}"
         print(f"[API.login] CRITICAL FAILURE: {error_message}")
         raise HTTPException(status_code=500, detail=error_message)
 
@@ -259,7 +278,7 @@ def register(request: RegisterRequest) -> Dict[str, Any]:
     Dynamic Registration Gateway (Pillar 1). Validates and transfers new user parameters 
     to the repository layer where Bcrypt salted hashing is securely executed.
     
-    UPGRADED (PHASE 3.3): Automatically establishes a 0-score, pre-configured row
+    UPGRADED (PHASE 3.3.1): Automatically establishes a 0-score, pre-configured row
     in the `public.shops` database table whenever a user with the `shopkeeper` role registers.
 
     Args:
@@ -356,9 +375,9 @@ def register(request: RegisterRequest) -> Dict[str, Any]:
     except HTTPException:
         # Preserve specific 400 status codes to trigger the correct UI alerts on the mobile device
         raise
-    except Exception as e:
+    except Exception as system_exception:
         # Catch unexpected database driver failures, connection drops, or memory exceptions
-        error_message: str = f"Internal Server Error during registration transaction: {str(e)}"
+        error_message: str = f"Internal Server Error during registration transaction: {str(system_exception)}"
         print(f"[API.register] CRITICAL FAILURE: {error_message}")
         raise HTTPException(status_code=500, detail=error_message)
 
@@ -393,8 +412,8 @@ def get_map_hazards(is_warden: bool = False) -> Dict[str, Any]:
         
         return response_payload
         
-    except Exception as e:
-        error_message: str = f"Failed to compile map spatial data: {str(e)}"
+    except Exception as system_exception:
+        error_message: str = f"Failed to compile map spatial data: {str(system_exception)}"
         print(f"[API.get_map_hazards] ERROR: {error_message}")
         raise HTTPException(status_code=500, detail=error_message)
 
@@ -515,8 +534,8 @@ def report_incident(report: HazardReport) -> Dict[str, Any]:
         
     except HTTPException:
         raise
-    except Exception as e:
-        error_message: str = f"Failed to process hazard report: {str(e)}"
+    except Exception as system_exception:
+        error_message: str = f"Failed to process hazard report: {str(system_exception)}"
         print(f"[API.report_incident] ERROR: {error_message}")
         raise HTTPException(status_code=500, detail=error_message)
 
@@ -583,8 +602,8 @@ def verify_incident(hazard_id: str, warden_id: str) -> Dict[str, Any]:
         
     except HTTPException:
         raise
-    except Exception as e:
-        error_message: str = f"Failed to execute warden verification loop: {str(e)}"
+    except Exception as system_exception:
+        error_message: str = f"Failed to execute warden verification loop: {str(system_exception)}"
         print(f"[API.verify_incident] CRITICAL ERROR: {error_message}")
         raise HTTPException(status_code=500, detail=error_message)
 
@@ -626,8 +645,8 @@ def delete_hazard(hazard_id: str) -> Dict[str, Any]:
         
     except HTTPException:
         raise
-    except Exception as e:
-        error_message: str = f"Failed to execute hazard deletion: {str(e)}"
+    except Exception as system_exception:
+        error_message: str = f"Failed to execute hazard deletion: {str(system_exception)}"
         print(f"[API.delete_hazard] CRITICAL ERROR: {error_message}")
         raise HTTPException(status_code=500, detail=error_message)
 
@@ -675,8 +694,8 @@ def scan_zone(coords: Coordinates) -> Dict[str, Any]:
         
         return warning_payload
         
-    except Exception as e:
-        error_message: str = f"Spatial calculation engine failed: {str(e)}"
+    except Exception as system_exception:
+        error_message: str = f"Spatial calculation engine failed: {str(system_exception)}"
         print(f"[API.scan_zone] ERROR: {error_message}")
         raise HTTPException(status_code=500, detail=error_message)
 
@@ -712,9 +731,9 @@ def get_channel_messages(channel: str) -> Dict[str, Any]:
         
         return response_payload
         
-    except Exception as e:
+    except Exception as system_exception:
         # Step 3: Catch memory overflows or database connection drops
-        error_message: str = f"Failed to retrieve channel messages: {str(e)}"
+        error_message: str = f"Failed to retrieve channel messages: {str(system_exception)}"
         print(f"[API.get_channel_messages] CRITICAL ERROR: {error_message}")
         raise HTTPException(status_code=500, detail=error_message)
 
@@ -768,8 +787,8 @@ def post_channel_message(payload: ChatMessagePayload) -> Dict[str, Any]:
 
     except HTTPException:
         raise
-    except Exception as e:
-        error_message: str = f"Failed to broadcast channel message: {str(e)}"
+    except Exception as system_exception:
+        error_message: str = f"Failed to broadcast channel message: {str(system_exception)}"
         print(f"[API.post_channel_message] CRITICAL ERROR: {error_message}")
         raise HTTPException(status_code=500, detail=error_message)
 
@@ -802,9 +821,9 @@ def get_global_campaigns() -> Dict[str, Any]:
         
         return response_payload
         
-    except Exception as e:
+    except Exception as system_exception:
         # Step 3: Catch any connection or execution failures and wrap them in an HTTP 500
-        error_message: str = f"Failed to compile global campaign feed: {str(e)}"
+        error_message: str = f"Failed to compile global campaign feed: {str(system_exception)}"
         print(f"[API.get_global_campaigns] CRITICAL ERROR: {error_message}")
         raise HTTPException(status_code=500, detail=error_message)
 
@@ -858,12 +877,12 @@ def create_campaign(payload: CampaignSubmissionPayload) -> Dict[str, Any]:
 
     except HTTPException:
         raise
-    except ValueError as ve:
-        error_message: str = f"Invalid payload formatting: {str(ve)}"
+    except ValueError as value_error_instance:
+        error_message: str = f"Invalid payload formatting: {str(value_error_instance)}"
         print(f"[API.create_campaign] FORMAT ERROR: {error_message}")
         raise HTTPException(status_code=400, detail=error_message)
-    except Exception as e:
-        error_message: str = f"Failed to initialize fundraising campaign: {str(e)}"
+    except Exception as system_exception:
+        error_message: str = f"Failed to initialize fundraising campaign: {str(system_exception)}"
         print(f"[API.create_campaign] CRITICAL ERROR: {error_message}")
         raise HTTPException(status_code=500, detail=error_message)
 
@@ -911,8 +930,8 @@ def scan_qr(qr_hash: str) -> Dict[str, Any]:
         
     except HTTPException:
         raise
-    except Exception as e:
-        error_message: str = f"Failed to process cryptographic QR hash: {str(e)}"
+    except Exception as system_exception:
+        error_message: str = f"Failed to process cryptographic QR hash: {str(system_exception)}"
         print(f"[API.scan_qr] ERROR: {error_message}")
         raise HTTPException(status_code=500, detail=error_message)
 
@@ -1590,14 +1609,14 @@ def analyze_room_safety(request: AiScanRequest) -> Dict[str, Any]:
     except HTTPException:
         # Preserve specific status codes to trigger the correct UI alerts on the mobile device structurally
         raise
-    except ValueError as ve:
+    except ValueError as value_error_instance:
         # Catches empty list extractions securely
-        error_message: str = f"Payload extraction failed: {str(ve)}"
+        error_message: str = f"Payload extraction failed: {str(value_error_instance)}"
         print(f"[API.analyze_room_safety] VALIDATION ERROR: {error_message}")
         raise HTTPException(status_code=400, detail=error_message)
-    except Exception as e:
+    except Exception as system_exception:
         # Catches unforeseen server-level memory leaks natively
-        error_message: str = f"Failed to process multi-angle AI Vision frame: {str(e)}"
+        error_message: str = f"Failed to process multi-angle AI Vision frame: {str(system_exception)}"
         print(f"[API.analyze_room_safety] CRITICAL FAILURE: {error_message}")
         raise HTTPException(status_code=500, detail=error_message)
 
@@ -1612,13 +1631,16 @@ def update_shop_compliance(submission: ChecklistSubmission) -> Dict[str, Any]:
     Calculates a real-time safety score based on submitted infrastructure compliance checks
     and updates the store record in the Supabase database.
     
-    UPGRADED (PHASE 3.3): Now strictly processes 7 distinct variables and weights them 
-    algorithmically to perfectly sum to a maximum of 100 points, ensuring the database
-    accurately reflects local shop hazards.
+    UPGRADED (PHASE 3.3.1): Bypasses the black-box store_repo and executes a direct 
+    PostgREST mutation targeting the 'owner_id' column instead of the primary key. 
+    This mathematically guarantees the UUID from the frontend matches the correct row,
+    preventing the 404 update rejection.
     """
     try:
-        # Step 1: Unpack all 7 boolean submission parameters explicitly into local memory.
-        target_shop_id: str = submission.shop_id
+        # Step 1: Unpack all 8 submission parameters explicitly into local memory.
+        # The shop_id here is actually the User's UUID (mapped to owner_id in the DB).
+        target_owner_uuid: str = submission.shop_id.strip()
+        
         is_extinguisher_operational: bool = submission.extinguisher_operational
         is_wiring_inspected: bool = submission.wiring_inspected
         are_exits_unobstructed: bool = submission.exits_unobstructed
@@ -1630,7 +1652,7 @@ def update_shop_compliance(submission: ChecklistSubmission) -> Dict[str, Any]:
         is_ventilation_clear: bool = submission.ventilation_clear
 
         # Step 2: Calculate dynamic compliance score algorithmically using weighted values.
-        # Total achievable score is exactly 100 points.
+        # Total achievable score is exactly 100 points based on the 7-point checklist.
         computed_score: int = 0
         
         if is_extinguisher_operational:
@@ -1654,29 +1676,45 @@ def update_shop_compliance(submission: ChecklistSubmission) -> Dict[str, Any]:
         if is_ventilation_clear:
             computed_score += 10
 
-        # Step 3: Execute the database mutation via the store repository layer.
-        update_result: Optional[Dict[str, Any]] = store_repo.update_safety_score(target_shop_id, computed_score)
+        # Step 3: Execute the database mutation directly via the Supabase Kernel
+        # We explicitly target the 'owner_id' column because the frontend passes 
+        # the Merchant's User UUID, not the physical Shop's auto-incrementing Primary Key.
+        active_cloud_db: Any = get_db()
+        
+        # Construct the explicitly typed update payload
+        update_payload: Dict[str, Any] = {
+            "safety_score": computed_score
+        }
+        
+        # Execute the targeted PostgREST update operation safely
+        update_response: Any = active_cloud_db.table("shops").update(update_payload).eq("owner_id", target_owner_uuid).execute()
 
-        # Step 4: Verify the database returned a successful mutation response confirming the write.
-        if not update_result:
+        # Step 4: Extract the data object safely from the PostgREST response
+        # If the eq() match fails, Supabase returns an empty data array [] without throwing an error natively.
+        update_result_data: List[Dict[str, Any]] = getattr(update_response, "data", [])
+
+        # Step 5: Verify the database returned a successful mutation response confirming the write.
+        if not update_result_data or len(update_result_data) == 0:
             raise HTTPException(
-                status_code=500, 
-                detail="Database write failure: Could not update safety compliance record. Please ensure your Shop ID was correctly registered."
+                status_code=404, 
+                detail="Database write failure: No shop record found linked to your account identity. Please re-register your property."
             )
 
-        # Step 5: Construct the explicit success payload confirming the score recalculation.
+        # Step 6: Construct the explicit success payload confirming the score recalculation.
         response_payload: Dict[str, Any] = {
             "status": "success",
-            "message": "Safety compliance metrics updated successfully.",
+            "message": "Safety compliance metrics successfully synchronized with the cloud.",
             "safety_score": computed_score,
-            "data": update_result
+            "data": update_result_data[0]
         }
         
         return response_payload
 
     except HTTPException:
+        # Preserve specific status codes to trigger the correct UI alerts on the mobile device structurally
         raise
-    except Exception as e:
-        error_message: str = f"Failed to process compliance submission: {str(e)}"
-        print(f"[API.update_shop_compliance] ERROR: {error_message}")
+    except Exception as system_exception:
+        # Catch unforeseen server-level memory leaks natively
+        error_message: str = f"Failed to process compliance submission: {str(system_exception)}"
+        print(f"[API.update_shop_compliance] CRITICAL ERROR: {error_message}")
         raise HTTPException(status_code=500, detail=error_message)
