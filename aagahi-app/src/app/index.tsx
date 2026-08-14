@@ -1,3 +1,23 @@
+/**
+ * ============================================================================
+ * @file index.tsx
+ * @title Aagahi Identity Gatekeeper (Login Interface)
+ * @description 
+ * Serves as the primary entry point and authentication gateway for the application.
+ * Integrates Pillar 1 Multi-Role Authentication by enforcing strict Role-Based 
+ * Access Control (RBAC) prior to credential validation, ensuring secure routing.
+ * 
+ * @upgrades_in_this_build
+ * - CRITICAL NETWORK FIX: Replaced the hardcoded local IPv4 address with the 
+ *   centralized API_BASE_URL to eradicate the [TypeError: Network request timed out] crash.
+ * - PHASE 3.3 INTEGRATION: Expanded the `AuthenticatedUser` interface and session 
+ *   payload mapping to explicitly capture and hydrate `shop_name` and `shop_category` 
+ *   from the backend login response into the global AuthContext memory.
+ * - EXTREME VERBOSITY: Applied mathematical unpacking, explicit type annotations, 
+ *   and robust try/catch blocks across the entire file structure.
+ * ============================================================================
+ */
+
 import React, { useState } from 'react';
 import { 
   StyleSheet, 
@@ -15,6 +35,9 @@ import { router } from 'expo-router';
 
 // CRITICAL FIX: Importing the global authentication context pipeline
 import { useAuth } from '../context/AuthContext';
+
+// CRITICAL FIX: Importing centralized network routing to prevent connection timeouts
+import { API_BASE_URL } from '../config/api';
 
 // ==========================================
 // SYSTEM CONFIGURATION & TYPE DEFINITIONS
@@ -45,12 +68,15 @@ type SystemRole = 'general' | 'shopkeeper' | 'warden';
 /**
  * Defines the expected structured payload of the authenticated user returned 
  * from the PostgreSQL database via the Python FastAPI layer.
+ * UPGRADED: Includes optional Phase 3.3 properties to securely capture storefront telemetry.
  */
 interface AuthenticatedUser {
   id: number;
   email: string;
   username?: string; // Added to strictly match the UserSession interface mapping requirement
   role: string; 
+  shop_name?: string; // Phase 3.3: Storefront Identifier
+  shop_category?: string; // Phase 3.3: Storefront Classification
 }
 
 /**
@@ -76,10 +102,11 @@ const COLORS: ThemeColors = {
 };
 
 /**
- * The IPv4 address of the FastAPI backend authentication endpoint.
- * Configured specifically for physical local-network device testing.
+ * Dynamically constructed absolute URL for the FastAPI backend authentication endpoint.
+ * This natively resolves the [TypeError: Network request timed out] by routing securely
+ * to the active cloud instance instead of a dead local IPv4 address.
  */
-const AUTH_API_URL: string = 'http://192.168.88.107:8000/api/auth/login';
+const AUTH_API_URL: string = `${API_BASE_URL}/api/auth/login`;
 
 // ==========================================
 // COMPONENT: AUTHENTICATION GATEWAY
@@ -141,7 +168,7 @@ export default function LoginScreen(): React.JSX.Element {
 
       // Step 3: Lock the interface to prevent concurrent submission spam and race conditions.
       setIsLoading(true);
-      console.log("[LoginScreen.handleAuthentication] Authentication sequence engaged for role: ", activeRole);
+      console.log(`[LoginScreen.handleAuthentication] Authentication sequence engaged for role: ${activeRole}`);
 
       // Step 4: Construct the JSON payload explicitly based on the validated backend Pydantic schema.
       const requestPayloadObject = {
@@ -152,22 +179,26 @@ export default function LoginScreen(): React.JSX.Element {
       // Serialize the object into a transmission-ready UTF-8 string.
       const requestPayloadString: string = JSON.stringify(requestPayloadObject);
 
-      // Step 5: Execute the network POST request to the Python backend gateway.
-      const response: Response = await fetch(AUTH_API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: requestPayloadString,
-      });
+      // Step 5: Execute the network POST request to the Python backend gateway natively.
+      const networkHeaders: HeadersInit = {
+        'Content-Type': 'application/json',
+      };
 
-      // Step 6: Unpack and await the raw JSON resolution from the byte stream.
-      const rawJsonResponse: any = await response.json();
+      const networkOptions: RequestInit = {
+        method: 'POST',
+        headers: networkHeaders,
+        body: requestPayloadString,
+      };
+
+      const response: Response = await fetch(AUTH_API_URL, networkOptions);
+
+      // Step 6: Unpack and await the raw JSON resolution from the byte stream securely.
+      const rawJsonResponse: Record<string, unknown> = await response.json();
       
       // Step 7: Cast the untyped JSON safely into our strict TypeScript interface.
       const parsedResponse: AuthApiResponse = rawJsonResponse as AuthApiResponse;
       
-      // Step 8: Evaluate HTTP Status Code to determine operational success.
+      // Step 8: Evaluate HTTP Status Code to determine operational success natively.
       const isNetworkSuccess: boolean = response.ok;
 
       if (isNetworkSuccess && parsedResponse.user) {
@@ -194,15 +225,35 @@ export default function LoginScreen(): React.JSX.Element {
         // Here we commit the authenticated user mathematically into the global application memory
         // BEFORE routing them. This ensures the Dashboard instantly recognizes Wardens/Shopkeepers.
         try {
+          // Extract core user parameters with strict fallback types
+          const targetIdString: string = String(parsedResponse.user.id);
+          const targetEmail: string = parsedResponse.user.email;
+          const targetUsername: string = parsedResponse.user.username || 'SystemUser';
+          const targetRoleEnum: 'general' | 'shopkeeper' | 'warden' = parsedResponse.user.role as 'general' | 'shopkeeper' | 'warden';
+
+          // Extract optional Phase 3.3 parameters for Shopkeeper configuration natively
+          const extractedShopName: string | undefined = parsedResponse.user.shop_name;
+          const extractedShopCategory: string | undefined = parsedResponse.user.shop_category;
+
           // Explicitly map the backend payload to the exact structure the AuthContext expects
-          const sessionPayload = {
-            id: String(parsedResponse.user.id),
-            email: parsedResponse.user.email,
-            username: parsedResponse.user.username || 'SystemUser', // Fallback to prevent null exceptions
-            role: parsedResponse.user.role as 'general' | 'shopkeeper' | 'warden'
+          const sessionPayload: Record<string, any> = {
+            id: targetIdString,
+            email: targetEmail,
+            username: targetUsername,
+            role: targetRoleEnum
           };
+
+          // Conditionally inject storefront metadata if the backend returned it successfully
+          if (extractedShopName !== undefined && extractedShopName !== null) {
+              sessionPayload.shop_name = extractedShopName;
+          }
           
-          await login(sessionPayload);
+          if (extractedShopCategory !== undefined && extractedShopCategory !== null) {
+              sessionPayload.shop_category = extractedShopCategory;
+          }
+          
+          // Transmit the fully constructed payload to the global identity manager
+          await login(sessionPayload as any);
           console.log("[LoginScreen.handleAuthentication] Memory hydration successful.");
         } catch (memoryError: unknown) {
           console.error("[LoginScreen.handleAuthentication] Failed to hydrate global memory: ", memoryError);

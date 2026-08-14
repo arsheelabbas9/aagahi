@@ -1,3 +1,22 @@
+/**
+ * ============================================================================
+ * @file AuthContext.tsx
+ * @title Aagahi Global Authentication & Identity Manager
+ * @description 
+ * This module is the central nervous system for identity state across the Aagahi app.
+ * It manages the volatile React State and the persistent physical disk storage
+ * (AsyncStorage) to ensure cryptographic authentication persists across app restarts.
+ * 
+ * @upgrades_in_this_build
+ * - PHASE 3.3 INTEGRATION: Expanded the UserSession interface to natively support
+ *   commercial storefront metadata (shop_name, shop_category).
+ * - HYDRATION SAFETY: The disk read cycle now explicitly extracts and sanitizes 
+ *   shopkeeper details, preventing RAM amnesia upon application reboot.
+ * - EXTREME VERBOSITY: Applied mathematical unpacking, explicit type annotations, 
+ *   and extensive JSDoc commentary across the entire file structure.
+ * ============================================================================
+ */
+
 import React, { createContext, useState, useEffect, useContext, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -9,12 +28,18 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
  * Defines the strict structural interface of an authenticated user session.
  * This guarantees that downstream consuming components (such as Chat, Dashboard, and Reports) 
  * always have access to a validated, type-safe identity payload containing their assigned role.
+ * 
+ * UPGRADED: Now natively supports Phase 3.3 commercial metadata to bind the frontend
+ * session directly to the PostgreSQL `public.shops` architectural row.
  */
 export interface UserSession {
   id: string | number;
   email: string;
   username: string;
   role: 'general' | 'shopkeeper' | 'warden';
+  // NEW OPTIONAL PARAMETERS FOR PHASE 3.3
+  shop_name?: string;
+  shop_category?: string;
 }
 
 /**
@@ -59,7 +84,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }): React.JSX.E
   /**
    * React Lifecycle hook to read the persistent local storage subsystem upon initial application boot.
    * Extracts the serialized JSON session string, parses it into memory, and hydrates the volatile state.
-   * UPGRADED: Includes structural validation to prevent corrupted disk data from crashing the app.
+   * UPGRADED: Includes structural validation to prevent corrupted disk data from crashing the app,
+   * while actively hunting for extended commercial storefront identifiers.
    * 
    * @async
    * @returns {Promise<void>} Resolves when the file system hydration sequence concludes.
@@ -79,36 +105,51 @@ export const AuthProvider = ({ children }: { children: ReactNode }): React.JSX.E
           // Step 4: Parse the serialized JSON string back into an untyped object first
           const rawParsedData: any = JSON.parse(storedSessionString);
           
-          // Step 5: Sanitize and strictly type-cast the extracted data to prevent runtime amnesia
+          // Step 5: Sanitize and strictly type-cast the extracted core data to prevent runtime amnesia
           const extractedRole: string = String(rawParsedData.role || 'general').toLowerCase().trim();
           let validatedRole: 'general' | 'shopkeeper' | 'warden' = 'general';
           
           if (extractedRole === 'warden' || extractedRole === 'shopkeeper' || extractedRole === 'general') {
             validatedRole = extractedRole as 'general' | 'shopkeeper' | 'warden';
           }
+
+          // Step 5.5: Conditionally extract and sanitize Phase 3.3 Shopkeeper metadata
+          // We utilize optional chaining and strict type checks to prevent undefined crashes.
+          const rawExtractedShopName: any = rawParsedData.shop_name;
+          const validatedShopName: string | undefined = rawExtractedShopName 
+            ? String(rawExtractedShopName).trim() 
+            : undefined;
+
+          const rawExtractedShopCategory: any = rawParsedData.shop_category;
+          const validatedShopCategory: string | undefined = rawExtractedShopCategory 
+            ? String(rawExtractedShopCategory).trim() 
+            : undefined;
           
+          // Step 6: Construct the fully verified payload mathematically
           const validatedUserData: UserSession = {
             id: rawParsedData.id,
             email: String(rawParsedData.email || ''),
             username: String(rawParsedData.username || ''),
-            role: validatedRole
+            role: validatedRole,
+            shop_name: validatedShopName,
+            shop_category: validatedShopCategory
           };
           
-          // Step 6: Hydrate the active volatile application state with the verified payload
+          // Step 7: Hydrate the active volatile application state with the verified payload
           setUser(validatedUserData);
           console.log(`[AuthProvider.hydrateSession] Existing session recovered successfully. Active Role: ${validatedRole.toUpperCase()}`);
         } else {
           console.log("[AuthProvider.hydrateSession] No active session found on disk. Awaiting fresh authentication.");
         }
       } catch (error: unknown) {
-        // Step 7: Catch catastrophic file system read errors securely to prevent boot crashes
+        // Step 8: Catch catastrophic file system read errors securely to prevent boot crashes
         let exceptionMessage: string = "Failed to access local storage subsystem.";
         if (error instanceof Error) {
           exceptionMessage = error.message;
         }
         console.error("[AuthProvider.hydrateSession] Disk hydration failure: ", exceptionMessage);
       } finally {
-        // Step 8: Release the application boot lock regardless of success or failure outcome
+        // Step 9: Release the application boot lock regardless of success or failure outcome
         setIsLoading(false);
       }
     };
@@ -120,7 +161,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }): React.JSX.E
   /**
    * Commits a newly authenticated user session to both volatile React State 
    * and physical device persistent storage (AsyncStorage).
-   * UPGRADED: Mathematically validates the role string to eradicate "Identity Amnesia".
+   * UPGRADED: Mathematically validates the role string and securely packages 
+   * any provided storefront metadata into the final serialized disk artifact.
    * 
    * @async
    * @param {UserSession} userData - The validated user object returned from the backend authentication gateway.
@@ -128,13 +170,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }): React.JSX.E
    */
   const login = async (userData: UserSession): Promise<void> => {
     try {
-      // Step 1: Unpack and rigorously sanitize the incoming payload to prevent casing mismatches
+      // Step 1: Unpack and rigorously sanitize the incoming core payload to prevent casing mismatches
       const rawId: string | number = userData.id;
       const rawEmail: string = userData.email;
       const rawUsername: string = userData.username;
       
       // Ensure the role is perfectly formatted to match the frontend TypeScript union exactly
       const rawRole: string = String(userData.role).toLowerCase().trim();
+
+      // Step 1.5: Unpack incoming Phase 3.3 Shopkeeper optional parameters
+      const rawShopName: string | undefined = userData.shop_name;
+      const rawShopCategory: string | undefined = userData.shop_category;
 
       // Step 2: Enforce a strict Role Validation Guard
       let sanitizedRole: 'general' | 'shopkeeper' | 'warden' = 'general';
@@ -151,6 +197,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }): React.JSX.E
           username: rawUsername,
           role: sanitizedRole
       };
+
+      // Step 3.5: Conditionally attach shop parameters if they mathematically exist in the stream
+      if (rawShopName !== undefined && rawShopName !== null) {
+          sanitizedUserData.shop_name = rawShopName.trim();
+      }
+      if (rawShopCategory !== undefined && rawShopCategory !== null) {
+          sanitizedUserData.shop_category = rawShopCategory.trim();
+      }
 
       // Step 4: Serialize the strict session object into a flat string format for disk storage compatibility
       const serializedData: string = JSON.stringify(sanitizedUserData);
