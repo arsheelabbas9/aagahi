@@ -24,7 +24,7 @@ from kernel import get_db  # Imported to facilitate direct database access for t
 app: FastAPI = FastAPI(
     title="Aagahi Routing & Hazard API",
     description="Central Nervous System for Spatial Hazard Tracking, Routing, Identity Management, and AI Telemetry Logging.",
-    version="3.1.0" # Version bumped to reflect the Phase 3.1 Cloud Storage Integration
+    version="3.3.0" # Version bumped to reflect Phase 3.3 Shopkeeper Database Auto-Registration & Math Engine
 )
 
 # ==========================================
@@ -76,14 +76,17 @@ class LoginRequest(BaseModel):
 class RegisterRequest(BaseModel):
     """
     Data validation schema for dynamic user registration (Pillar 1).
-    Captures the mandatory metrics required for Phase 2 Community & Geographic Chat integrations.
-    Strictly enforces string typings before the data reaches the PostgreSQL repository layer.
+    UPGRADED (PHASE 3.3): Introduced optional storefront attributes. Ensures the system 
+    can automatically generate a comprehensive public.shops row immediately upon user creation.
     """
     email: str
     password: str
     username: str
     contact_number: str
     role: str
+    # NEW EXPANDED METRICS FOR MERCHANT REGISTRATION
+    shop_name: Optional[str] = None
+    shop_category: Optional[str] = None
 
 class HazardCoordinate(BaseModel):
     """
@@ -107,14 +110,18 @@ class HazardReport(BaseModel):
 class ChecklistSubmission(BaseModel):
     """
     Data validation schema for shopkeeper fire safety checklist submissions.
-    Enforces explicit boolean status checks for key infrastructure components
-    to dynamically calculate accurate real-time safety scores.
+    UPGRADED (PHASE 3.3): Enforces explicit boolean status checks for the expanded 
+    7-point infrastructure components to dynamically calculate accurate real-time safety scores.
     """
     shop_id: int
     extinguisher_operational: bool
     wiring_inspected: bool
     exits_unobstructed: bool
     emergency_lighting: bool
+    # NEW EXPANDED METRICS ADDED FROM FRONTEND
+    flammables_isolated: bool
+    gas_secured: bool
+    ventilation_clear: bool
 
 class ChatMessagePayload(BaseModel):
     """
@@ -176,7 +183,7 @@ def health_check() -> Dict[str, str]:
         # Construct and unpack the status response payload explicitly into memory
         response_payload: Dict[str, str] = {
             "status": "Aagahi API is Online",
-            "version": "3.1.0"
+            "version": "3.3.0"
         }
         
         return response_payload
@@ -251,6 +258,9 @@ def register(request: RegisterRequest) -> Dict[str, Any]:
     """
     Dynamic Registration Gateway (Pillar 1). Validates and transfers new user parameters 
     to the repository layer where Bcrypt salted hashing is securely executed.
+    
+    UPGRADED (PHASE 3.3): Automatically establishes a 0-score, pre-configured row
+    in the `public.shops` database table whenever a user with the `shopkeeper` role registers.
 
     Args:
         request (RegisterRequest): The structured payload containing all mandatory onboarding data.
@@ -294,6 +304,45 @@ def register(request: RegisterRequest) -> Dict[str, Any]:
                 status_code=400, 
                 detail="Registration Denied: Email or Username already exists in the Aagahi registry."
             )
+
+        # ==========================================
+        # TITANIUM SHOPKEEPER AUTO-REGISTRATION BLOCK
+        # ==========================================
+        # We intercept the registration flow natively. If the verified role is 'shopkeeper', 
+        # we programmatically enforce the creation of a 'shops' row tied to their UUID,
+        # perfectly matching the 0/100 baseline checklist requirement.
+        if target_role == "shopkeeper":
+            try:
+                active_cloud_db: Any = get_db()
+                extracted_user_uuid: str = str(new_user.get("id"))
+                
+                # Unpack optional fields with safe string fallbacks to prevent null constraint errors
+                raw_shop_name: Optional[str] = request.shop_name
+                target_shop_name: str = raw_shop_name.strip() if raw_shop_name else "New Registered Shop"
+                
+                raw_shop_category: Optional[str] = request.shop_category
+                target_shop_category: str = raw_shop_category.strip() if raw_shop_category else "General Store"
+                
+                # Derive the exact, deterministic QR string required by the frontend scanning UI
+                generated_qr_hash: str = f"aagahi_merch_{extracted_user_uuid}_5605f6e80bcecc14aab82b015cc20b13"
+                
+                # Build the precise relational payload for public.shops
+                cloud_shop_payload: Dict[str, Any] = {
+                    "owner_id": extracted_user_uuid,
+                    "shop_name": target_shop_name,
+                    "shop_category": target_shop_category,
+                    "safety_score": 0,  # CRITICAL FIX: Defaults to ZERO to force the user to earn points
+                    "qr_hash": generated_qr_hash
+                }
+                
+                # Commit the secondary structural row securely
+                active_cloud_db.table("shops").insert(cloud_shop_payload).execute()
+                print(f"[API.register] Successfully initialized 0-Score shop profile for UUID: {extracted_user_uuid}")
+
+            except Exception as shop_init_error:
+                # We catch but do not crash the primary registration process if the secondary insertion drops
+                print(f"[API.register] Warning: Shop initialization dropped post-registration. Details: {str(shop_init_error)}")
+
             
         # Step 4: Construct the explicit success payload.
         success_response: Dict[str, Any] = {
@@ -1562,29 +1611,48 @@ def update_shop_compliance(submission: ChecklistSubmission) -> Dict[str, Any]:
     """
     Calculates a real-time safety score based on submitted infrastructure compliance checks
     and updates the store record in the Supabase database.
+    
+    UPGRADED (PHASE 3.3): Now strictly processes 7 distinct variables and weights them 
+    algorithmically to perfectly sum to a maximum of 100 points, ensuring the database
+    accurately reflects local shop hazards.
     """
     try:
-        # Step 1: Unpack all boolean submission parameters explicitly into local memory.
+        # Step 1: Unpack all 7 boolean submission parameters explicitly into local memory.
         target_shop_id: int = submission.shop_id
         is_extinguisher_operational: bool = submission.extinguisher_operational
         is_wiring_inspected: bool = submission.wiring_inspected
         are_exits_unobstructed: bool = submission.exits_unobstructed
         has_emergency_lighting: bool = submission.emergency_lighting
+        
+        # New Phase 3.3 Environmental Parameters
+        is_flammables_isolated: bool = submission.flammables_isolated
+        is_gas_secured: bool = submission.gas_secured
+        is_ventilation_clear: bool = submission.ventilation_clear
 
-        # Step 2: Calculate dynamic compliance score algorithmically.
+        # Step 2: Calculate dynamic compliance score algorithmically using weighted values.
+        # Total achievable score is exactly 100 points.
         computed_score: int = 0
         
         if is_extinguisher_operational:
-            computed_score += 25
+            computed_score += 20
             
         if is_wiring_inspected:
-            computed_score += 25
+            computed_score += 20
             
         if are_exits_unobstructed:
-            computed_score += 25
+            computed_score += 15
             
+        if is_flammables_isolated:
+            computed_score += 15
+
         if has_emergency_lighting:
-            computed_score += 25
+            computed_score += 10
+            
+        if is_gas_secured:
+            computed_score += 10
+            
+        if is_ventilation_clear:
+            computed_score += 10
 
         # Step 3: Execute the database mutation via the store repository layer.
         update_result: Optional[Dict[str, Any]] = store_repo.update_safety_score(target_shop_id, computed_score)
@@ -1593,7 +1661,7 @@ def update_shop_compliance(submission: ChecklistSubmission) -> Dict[str, Any]:
         if not update_result:
             raise HTTPException(
                 status_code=500, 
-                detail="Database write failure: Could not update safety compliance record."
+                detail="Database write failure: Could not update safety compliance record. Please ensure your Shop ID was correctly registered."
             )
 
         # Step 5: Construct the explicit success payload confirming the score recalculation.

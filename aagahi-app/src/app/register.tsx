@@ -1,3 +1,22 @@
+/**
+ * ============================================================================
+ * @file register.tsx
+ * @title Aagahi Dynamic Identity Registration Gateway
+ * @description 
+ * This module serves as the primary onboarding pipeline for the Aagahi platform.
+ * It manages state and network transmission for three distinct authorization tiers
+ * (General Citizen, Shop Owner, and Warden). 
+ * 
+ * @upgrades_in_this_build
+ * - PHASE 3.3 INTEGRATION: Dynamically renders expanded input parameters 
+ *   (Shop Name and Shop Category) specifically when the 'Shop Owner' role is active.
+ * - PAYLOAD CONSTRUCTION: Conditionally injects storefront details into the POST 
+ *   request strictly to satisfy the updated FastAPI Pydantic requirements.
+ * - EXTREME VERBOSITY: Applied mathematical unpacking, explicit type annotations, 
+ *   and extensive JSDoc commentary across the entire file structure.
+ * ============================================================================
+ */
+
 import React, { useState } from 'react';
 import { 
   StyleSheet, 
@@ -54,6 +73,20 @@ interface RegisterApiResponse {
   };
 }
 
+/**
+ * Defines the strict structure of the outgoing registration payload.
+ * Includes optional parameters strictly reserved for the 'shopkeeper' execution path.
+ */
+interface RegistrationPayload {
+  email: string;
+  password: string;
+  username: string;
+  contact_number: string;
+  role: SystemRole;
+  shop_name?: string;
+  shop_category?: string;
+}
+
 // System Theme instantiation explicitly typed and strictly assigned to memory.
 const COLORS: ThemeColors = {
   background: '#F4F7F9',
@@ -85,12 +118,17 @@ const REGISTER_API_URL: string = 'http://192.168.88.107:8000/api/auth/register';
  */
 export default function RegisterScreen(): React.JSX.Element {
   
-  // --- Explicitly Typed State Management ---
+  // --- Explicitly Typed Core State Management ---
   // Each input field requires its own isolated state tracker to prevent cross-contamination.
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [username, setUsername] = useState<string>('');
   const [contactNumber, setContactNumber] = useState<string>('');
+  
+  // --- Explicitly Typed Phase 3.3 State Management (Shopkeeper Exclusive) ---
+  // Isolated states that are mathematically evaluated only when the active role permits.
+  const [shopName, setShopName] = useState<string>('');
+  const [shopCategory, setShopCategory] = useState<string>('');
   
   // Interface locking boolean. Prevents multi-tap network spam during active submissions.
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -100,15 +138,16 @@ export default function RegisterScreen(): React.JSX.Element {
 
   /**
    * Orchestrates the secure transmission of new user credentials to the Python API.
-   * Handles strict pre-flight validation, data sanitization, asynchronous network fetching, 
-   * security memory purging, and dynamic routing upon successful database insertion.
+   * Handles strict pre-flight validation, conditional shopkeeper parameter extraction, 
+   * data sanitization, asynchronous network fetching, security memory purging, 
+   * and dynamic routing upon successful database insertion.
    * 
    * @async
    * @returns {Promise<void>} Resolves when the registration lifecycle completely concludes.
    */
   const handleRegistration = async (): Promise<void> => {
     try {
-      // Step 1: Input Sanitization and Unpacking
+      // Step 1: Core Input Sanitization and Unpacking
       // We isolate and trim variables explicitly to prevent invisible whitespace 
       // from causing authentication or hashing failures on the backend engine.
       const rawEmail: string = email;
@@ -122,7 +161,17 @@ export default function RegisterScreen(): React.JSX.Element {
       const rawContact: string = contactNumber;
       const sanitizedContact: string = rawContact.trim();
 
-      // Step 2: Pre-flight Validation Execution
+      // Step 1.5: Conditional Shopkeeper Sanitization
+      const targetRole: SystemRole = activeRole;
+      const isShopkeeperRoleActive: boolean = targetRole === 'shopkeeper';
+      
+      const rawShopName: string = shopName;
+      const sanitizedShopName: string = rawShopName.trim();
+      
+      const rawShopCategory: string = shopCategory;
+      const sanitizedShopCategory: string = rawShopCategory.trim();
+
+      // Step 2: Pre-flight Validation Execution (Core Constraints)
       // Calculate boolean flags for empty states to ensure the system rejects 
       // incomplete payloads before burning network resources.
       const isEmailEmpty: boolean = sanitizedEmail.length === 0;
@@ -132,37 +181,61 @@ export default function RegisterScreen(): React.JSX.Element {
 
       if (isEmailEmpty || isPasswordEmpty || isUsernameEmpty || isContactEmpty) {
         const validationTitle: string = "Validation Error";
-        const validationMessage: string = "All fields are mandatory. Please complete your profile parameters before submitting.";
+        const validationMessage: string = "All core fields are mandatory. Please complete your profile parameters before submitting.";
         Alert.alert(validationTitle, validationMessage);
         return;
+      }
+
+      // Step 2.5: Pre-flight Validation Execution (Shopkeeper Exclusive Constraints)
+      if (isShopkeeperRoleActive) {
+        const isShopNameEmpty: boolean = sanitizedShopName.length === 0;
+        const isShopCategoryEmpty: boolean = sanitizedShopCategory.length === 0;
+        
+        if (isShopNameEmpty || isShopCategoryEmpty) {
+            const shopValidationTitle: string = "Incomplete Shop Profile";
+            const shopValidationMessage: string = "Shop Name and Category are required to register a commercial property in the database.";
+            Alert.alert(shopValidationTitle, shopValidationMessage);
+            return;
+        }
       }
 
       // Step 3: Lock the interface
       // Setting this to true disables all interactive buttons and text inputs.
       setIsLoading(true);
-      console.log("[RegisterScreen.handleRegistration] Registration sequence initiated for role: ", activeRole);
+      console.log(`[RegisterScreen.handleRegistration] Registration sequence initiated for role: ${targetRole}`);
 
-      // Step 4: Construct the JSON payload explicitly
+      // Step 4: Construct the dynamic JSON payload explicitly
       // This object structure matches the Pydantic data model expected by FastAPI.
-      const requestPayloadObject = {
+      const requestPayloadObject: RegistrationPayload = {
         email: sanitizedEmail,
         password: rawPassword,
         username: sanitizedUsername,
         contact_number: sanitizedContact,
-        role: activeRole
+        role: targetRole
       };
+      
+      // Conditionally attach storefront metadata strictly when authorized
+      if (isShopkeeperRoleActive) {
+          requestPayloadObject.shop_name = sanitizedShopName;
+          requestPayloadObject.shop_category = sanitizedShopCategory;
+          console.log("[RegisterScreen.handleRegistration] Appending storefront telemetry to payload.");
+      }
       
       // Serialize the object into a transmission-ready UTF-8 string.
       const requestPayloadString: string = JSON.stringify(requestPayloadObject);
 
       // Step 5: Execute the network POST request to the local Python backend gateway
-      const response: Response = await fetch(REGISTER_API_URL, {
+      const networkHeaders: HeadersInit = {
+        'Content-Type': 'application/json',
+      };
+
+      const networkOptions: RequestInit = {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: networkHeaders,
         body: requestPayloadString,
-      });
+      };
+
+      const response: Response = await fetch(REGISTER_API_URL, networkOptions);
 
       // Step 6: Unpack and await the raw JSON resolution from the data stream
       const rawJsonResponse: any = await response.json();
@@ -175,15 +248,21 @@ export default function RegisterScreen(): React.JSX.Element {
 
       if (isNetworkSuccess && parsedResponse.user) {
         // Step 9: Security Purge
-        // Instantly destroy sensitive credentials from local React state memory.
+        // Instantly destroy sensitive credentials and metadata from local React state memory.
         setEmail('');
         setPassword('');
         setUsername('');
         setContactNumber('');
+        setShopName('');
+        setShopCategory('');
         
         // Step 10: Provide success feedback and route the user back to the Identity Gatekeeper (Login)
         const successTitle: string = "Registration Successful";
-        const successMessage: string = "Your identity profile has been verified and registered in the database.";
+        let successMessage: string = "Your identity profile has been verified and registered in the database.";
+        
+        if (isShopkeeperRoleActive) {
+            successMessage = "Your commercial profile has been registered and a 0-Score compliance database row has been initialized.";
+        }
         
         Alert.alert(
           successTitle, 
@@ -260,6 +339,10 @@ export default function RegisterScreen(): React.JSX.Element {
   // ==========================================
   // COMPONENT RENDER TREE
   // ==========================================
+  
+  // Extracted boolean to explicitly determine dynamic UI rendering
+  const shouldRenderShopkeeperInputs: boolean = activeRole === 'shopkeeper';
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.mobileContainer}>
@@ -328,6 +411,43 @@ export default function RegisterScreen(): React.JSX.Element {
                 editable={!isLoading}
               />
             </View>
+
+            {/* ========================================== */}
+            {/* CONDITIONAL SHOPKEEPER EXTENSION BLOCK     */}
+            {/* ========================================== */}
+            {shouldRenderShopkeeperInputs && (
+                <View style={styles.highlightedSection}>
+                    <Text style={styles.highlightedSectionTitle}>Storefront Details</Text>
+                    
+                    {/* Shop Name Input Group */}
+                    <View style={styles.inputGroup}>
+                        <Text style={styles.inputLabel}>Shop Name</Text>
+                        <TextInput 
+                            style={styles.input}
+                            placeholder="e.g. Al-Madina General Store"
+                            placeholderTextColor={COLORS.textMuted}
+                            value={shopName}
+                            onChangeText={setShopName}
+                            autoCapitalize="words"
+                            editable={!isLoading}
+                        />
+                    </View>
+
+                    {/* Shop Category Input Group */}
+                    <View style={styles.inputGroup}>
+                        <Text style={styles.inputLabel}>Shop Category</Text>
+                        <TextInput 
+                            style={styles.input}
+                            placeholder="e.g. Grocery, Electrical, Garments"
+                            placeholderTextColor={COLORS.textMuted}
+                            value={shopCategory}
+                            onChangeText={setShopCategory}
+                            autoCapitalize="words"
+                            editable={!isLoading}
+                        />
+                    </View>
+                </View>
+            )}
 
             {/* Password Input Group */}
             <View style={styles.inputGroup}>
@@ -468,6 +588,23 @@ const styles = StyleSheet.create({
     fontSize: 16, 
     borderWidth: 1.5, 
     borderColor: COLORS.border 
+  },
+  // --- NEW STYLES: Highlights the conditionally rendered block ---
+  highlightedSection: {
+    backgroundColor: '#F8FAFC',
+    padding: 16,
+    borderRadius: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0'
+  },
+  highlightedSectionTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: COLORS.primary,
+    marginBottom: 16,
+    textAlign: 'center',
+    letterSpacing: 0.5
   },
   registerButton: { 
     backgroundColor: COLORS.primary, 
