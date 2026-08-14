@@ -1,3 +1,22 @@
+/**
+ * ============================================================================
+ * @file shopkeeper.tsx
+ * @title Aagahi Merchant Compliance Portal
+ * @description 
+ * The isolated dashboard for commercial property owners. Allows authenticated 
+ * shopkeepers to manage their physical location coordinates, update mandatory 
+ * fire safety checklists, calculate live compliance scores, and inspect their 
+ * unique cryptographic QR identity hash.
+ * 
+ * @upgrades_in_this_build
+ * - TYPESCRIPT STRICT MODE FIX: Eradicated the `any` type leakage during JSON 
+ *   parsing. The network stream is now strictly typed as `unknown` before being 
+ *   safely cast to `ComplianceApiResponse`, resolving the assignment compilation error.
+ * - EXTREME VERBOSITY: Applied mathematical unpacking, explicit type annotations, 
+ *   and robust try/catch blocks across the entire file structure.
+ * ============================================================================
+ */
+
 import React, { useState } from 'react';
 import { 
   StyleSheet, 
@@ -13,7 +32,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
-// NEW: Global Identity Manager & Centralized Network Configuration
+// Global Identity Manager & Centralized Network Configuration
 import { useAuth } from '../context/AuthContext';
 import { API_BASE_URL } from '../config/api';
 
@@ -51,9 +70,10 @@ interface ComplianceApiResponse {
 /**
  * Defines the strict structure of the outgoing checklist payload.
  * UPGRADED: Expanded to include 3 new critical real-world fire safety checks.
+ * CRITICAL FIX: `shop_id` is now strictly a `string` to accommodate Supabase UUIDs natively.
  */
 interface ChecklistPayload {
-  shop_id: number;
+  shop_id: string; 
   extinguisher_operational: boolean;
   wiring_inspected: boolean;
   exits_unobstructed: boolean;
@@ -85,18 +105,6 @@ const API_COMPLIANCE_URL: string = `${API_BASE_URL}/api/shops/compliance`;
 // COMPONENT: SHOPKEEPER PORTAL
 // ==========================================
 
-/**
- * ShopkeeperScreen Component
- * The isolated dashboard for commercial property owners. 
- * Allows authenticated shopkeepers to manage their physical location coordinates, 
- * update mandatory fire safety checklists, calculate live compliance scores, 
- * and inspect their unique, ID-bound cryptographic QR identity hash (Pillar 4).
- * 
- * UPGRADED: All states strictly default to FALSE and 0. Shopkeepers must manually 
- * check items to earn compliance points.
- * 
- * @returns {React.JSX.Element} The strictly typed, rendered Shopkeeper Interface.
- */
 export default function ShopkeeperScreen(): React.JSX.Element {
   
   // --- Global Identity Extraction ---
@@ -124,7 +132,6 @@ export default function ShopkeeperScreen(): React.JSX.Element {
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   // PILLAR 4 STATE: Generate a cryptographic QR hash string representing the merchant's digital compliance identity.
-  // We mathematically bind the hash to the actual logged-in user ID to ensure complete database correlation.
   const isUserValid: boolean = user !== null && user !== undefined;
   const rawUserIdString: string = isUserValid ? String(user!.id) : "system_default";
   
@@ -145,18 +152,13 @@ export default function ShopkeeperScreen(): React.JSX.Element {
       setIsSubmitting(true);
       console.log("[ShopkeeperScreen.handleChecklistUpdate] Checklist update sequence initiated.");
 
-      // Step 2: Extract and cast the actual merchant ID from the global AuthContext safely
-      const rawUserId: string | number = isUserValid ? user!.id : 1;
-      
-      // Parse the ID safely into an integer to perfectly match the backend PostgreSQL schema
-      const isIdNumberType: boolean = typeof rawUserId === 'number';
-      const parsedShopId: number = isIdNumberType 
-        ? (rawUserId as number) 
-        : parseInt(String(rawUserId), 10);
+      // Step 2: Extract the actual merchant ID from the global AuthContext safely
+      // We strictly cast this as a String to preserve the UUID format.
+      const parsedShopIdString: string = isUserValid ? String(user!.id) : "system_default";
 
       // Step 3: Unpack and construct the explicit JSON payload matching the upgraded Pydantic schema
       const requestPayloadObject: ChecklistPayload = {
-        shop_id: parsedShopId,
+        shop_id: parsedShopIdString, 
         extinguisher_operational: extinguisherOperational,
         wiring_inspected: wiringInspected,
         exits_unobstructed: exitsUnobstructed,
@@ -182,11 +184,12 @@ export default function ShopkeeperScreen(): React.JSX.Element {
 
       const response: Response = await fetch(API_COMPLIANCE_URL, fetchOptions);
 
-      // Step 5: Unpack the network stream into a raw JSON object safely
-      const rawJsonResponse: any = await response.json();
+      // Step 5: Unpack the network stream into a strictly unknown object to prevent 'any' type leakage
+      // This completely resolves the TypeScript strict mode assignment compilation error.
+      const rawJsonResponse: unknown = await response.json();
       
-      // Step 6: Explicitly cast the response into our defined TypeScript interface for safe extraction
-      const parsedResponse: ComplianceApiResponse = rawJsonResponse as ComplianceApiResponse;
+      // Step 6: Safely double-cast the unknown payload into our defined TypeScript interface
+      const parsedResponse: ComplianceApiResponse = rawJsonResponse as unknown as ComplianceApiResponse;
       
       // Step 7: Evaluate the HTTP status success boolean natively
       const isNetworkSuccess: boolean = response.ok;
@@ -194,12 +197,11 @@ export default function ShopkeeperScreen(): React.JSX.Element {
       if (isNetworkSuccess) {
         // Step 8: Update the live score state with the algorithmically computed score from the server
         const extractedSafetyScore: number = parsedResponse.safety_score;
-        const updatedScore: number = extractedSafetyScore;
-        setCurrentScore(updatedScore);
+        setCurrentScore(extractedSafetyScore);
 
         // Step 9: Provide immediate positive operational confirmation to the merchant
         const alertTitle: string = "Compliance Synchronized";
-        const alertMessage: string = `Your safety score has been successfully recalculated to ${updatedScore}/100.`;
+        const alertMessage: string = `Your safety score has been successfully recalculated to ${extractedSafetyScore}/100.`;
         Alert.alert(alertTitle, alertMessage);
       } else {
         // Step 10: Extract server-side exception details if available via FastAPI HTTPExceptions
@@ -486,7 +488,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: 20,
   },
-  // PILLAR 4: QR Display Styles
   qrContainer: {
     alignItems: 'center',
     backgroundColor: '#F8FAFC',

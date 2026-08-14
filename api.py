@@ -113,7 +113,7 @@ class ChecklistSubmission(BaseModel):
     UPGRADED (PHASE 3.3): Enforces explicit boolean status checks for the expanded 
     7-point infrastructure components to dynamically calculate accurate real-time safety scores.
     """
-    shop_id: int
+    shop_id: str
     extinguisher_operational: bool
     wiring_inspected: bool
     exits_unobstructed: bool
@@ -1618,7 +1618,7 @@ def update_shop_compliance(submission: ChecklistSubmission) -> Dict[str, Any]:
     """
     try:
         # Step 1: Unpack all 7 boolean submission parameters explicitly into local memory.
-        target_shop_id: int = submission.shop_id
+        target_shop_id: str = submission.shop_id
         is_extinguisher_operational: bool = submission.extinguisher_operational
         is_wiring_inspected: bool = submission.wiring_inspected
         are_exits_unobstructed: bool = submission.exits_unobstructed
