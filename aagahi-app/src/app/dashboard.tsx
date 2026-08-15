@@ -64,7 +64,9 @@ import {
   TextInput, 
   Keyboard, 
   FlatList, 
-  KeyboardAvoidingView
+  KeyboardAvoidingView,
+  ScrollView,
+  Dimensions
 } from 'react-native';
 
 // ============================================================================
