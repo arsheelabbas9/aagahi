@@ -2528,6 +2528,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.overlay,
     borderRadius: 20,
     paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingVertical: 9,
   },
 });
