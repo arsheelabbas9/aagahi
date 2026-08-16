@@ -1,16 +1,32 @@
 /**
  * ============================================================================
  * @file en.ts
+ * @title Aagahi English Localization Dictionary
  * @description
  * The primary English language dictionary conforming strictly to the 
- * TranslationDictionary interface contract.
+ * TranslationDictionary interface contract defined in `types.ts`.
+ * 
+ * @architecture
+ * - COMPILE-TIME SAFETY: By explicitly declaring the type as `: TranslationDictionary`, 
+ *   the TypeScript compiler mathematically enforces that every single key required 
+ *   by the UI is populated here. Missing a key triggers a fatal build error, 
+ *   preventing undefined runtime text rendering natively.
+ * - IMMUTABILITY: Exported as a constant object to prevent accidental mutation 
+ *   of the localization state during dynamic component rendering.
+ * 
+ * @upgrades_in_this_build
+ * - BUG FIX: Patched the TS2739 interface implementation error on the 
+ *   `englishTranslations` declaration by injecting the newly required keys for 
+ *   the Profile Telemetry Hub and Dashboard UI upgrades.
  * ============================================================================
  */
 
 import { TranslationDictionary } from './types';
 
 export const englishTranslations: TranslationDictionary = {
-    // Dashboard
+    // ==========================================
+    // DASHBOARD & MASTER HUD KEYS
+    // ==========================================
     dashboardTitle: "Aagahi Dashboard",
     languageToggleLabel: "Switch to Urdu",
     welcomeMessage: "Welcome back to the Command Center.",
@@ -21,6 +37,22 @@ export const englishTranslations: TranslationDictionary = {
     start_placeholder: "Starting Point",
     dest_placeholder: "Enter Destination (e.g. Clifton)",
     find_route: "Find Safe Route",
+
+    // NEW: Dashboard UI Upgrade Keys
+    dashboard_banner_title: "Community Safety Status",
+    dashboard_banner_sub: "Your local environment is actively monitored.",
+    dashboard_section_core: "Core Spatial Operations",
+    dashboard_map_desc: "View dynamic hazards",
+    dashboard_safe_desc: "Secure path calculation",
+    dashboard_report_desc: "Flag structural anomalies",
+    dashboard_scan_desc: "AI room evaluation matrix",
+    dashboard_warden_desc: "Administration",
+    dashboard_shop_desc: "Configuration",
+    dashboard_chat_desc: "Community Chat",
+
+    // ==========================================
+    // FLOATING ACTION BUTTON (FAB) RAIL
+    // ==========================================
     fab_navigate: "Navigate",
     fab_chat: "Chat",
     fab_warden: "Warden",
@@ -30,7 +62,41 @@ export const englishTranslations: TranslationDictionary = {
     fab_blockage: "Blockage",
     fab_fund: "Fund",
 
-    // Chat
+    // ==========================================
+    // NEW: PROFILE & TELEMETRY HUB KEYS
+    // ==========================================
+    profile_header_title: "User Operations Profile",
+    profile_default_user: "Verified User",
+    profile_default_email: "user@aagahi.com",
+    profile_shop_title: "Registered Facility:",
+    profile_ops_title: "Active Operations Matrix",
+    profile_ops_empty: "No active reports or fundraisers detected in the registry.",
+    profile_ops_initiated: "Initiated: ",
+    profile_survey_title: "Infrastructure Intelligence",
+    profile_survey_sub: "Provide manual data regarding building infrastructure and vendor expertise that our AI matrix cannot natively extract from images.",
+    profile_survey_q1: "Estimated Age of Electrical Wiring",
+    profile_survey_q1_ph: "e.g. Installed in 1998, 25+ Years old",
+    profile_survey_q2: "Last Structural Renovation",
+    profile_survey_q2_ph: "e.g. Partial roof repair in 2023",
+    profile_survey_q3: "Aagahi Brand Partner Registration",
+    profile_survey_q3_ph: "Do you sell Fire Extinguishers or Safety Gear? Specify here.",
+    profile_survey_q4: "General Safety Feedback / Suggestions",
+    profile_survey_q4_ph: "Submit any additional environmental concerns...",
+    profile_survey_btn: "Commit to Algorithm",
+    profile_survey_btn_loading: "Processing Matrix...",
+    profile_help_title: "Emergency Support Center",
+    profile_help_sub: "Contact Aagahi Wardens directly.",
+    profile_logout_btn: "Terminate Session Securely",
+    profile_alert_val_title: "Validation Error",
+    profile_alert_val_msg: "Please populate at least one survey metric before initiating transmission.",
+    profile_alert_succ_title: "Telemetry Secured",
+    profile_alert_succ_msg: "Your infrastructure intelligence and vendor profile have been successfully integrated into the Aagahi algorithm.",
+    profile_alert_err_title: "Transmission Error",
+    profile_alert_err_msg: "Failed to securely commit survey data to the cloud matrix.",
+
+    // ==========================================
+    // CHAT SCREEN KEYS
+    // ==========================================
     chat_header_title: "Community Chat Rooms",
     chat_back_btn: "← Back to Dashboard",
     chat_new_zone: "New Zone",
@@ -45,7 +111,9 @@ export const englishTranslations: TranslationDictionary = {
     chat_video_sub: "Tap to stream secure media file",
     chat_file_sub: "Verified Document • Secure PDF",
 
-    // Report
+    // ==========================================
+    // UNIFIED REPORTING SCREEN KEYS
+    // ==========================================
     report_back_btn: "← Back to Dashboard",
     report_header_title: "Report Anomaly",
     report_step1_title: "1. Confirm Coordinates",
@@ -70,7 +138,9 @@ export const englishTranslations: TranslationDictionary = {
     report_alert_db_err: "Database Constraint Error",
     report_alert_conn_err: "Network connection to the server dropped unexpectedly.",
 
-    // Shopkeeper
+    // ==========================================
+    // SHOPKEEPER PORTAL KEYS
+    // ==========================================
     shop_header_subtitle: "Merchant Portal",
     shop_header_title: "Facility Management",
     shop_qr_title: "Cryptographic Compliance QR",
@@ -101,7 +171,9 @@ export const englishTranslations: TranslationDictionary = {
     shop_geo_alert_title: "Geographic Registry",
     shop_geo_alert_msg: "Location calibration module active.",
 
-    // Warden
+    // ==========================================
+    // WARDEN ADMINISTRATION KEYS
+    // ==========================================
     warden_back_btn: "← Return to Map Engine",
     warden_header_title: "Warden Operations Command",
     warden_queue_title: "Pending Verification Queue",
@@ -141,7 +213,9 @@ export const englishTranslations: TranslationDictionary = {
     warden_err_net_disturb_title: "Network Disturbance",
     warden_err_spatial_enc: "[Spatial Data Encryption Error]",
 
-    // Scanner
+    // ==========================================
+    // DUAL-SCANNER SYSTEM KEYS
+    // ==========================================
     scanner_header_ai: "AI Room Safety Scanner",
     scanner_header_qr: "Facility QR Scanner",
     scanner_back_btn: "← Back to Dashboard",
@@ -198,12 +272,16 @@ export const englishTranslations: TranslationDictionary = {
     scanner_fix_light_desc: "Functional emergency lighting helps people find the exit safely during a power outage or a fire.",
     scanner_fix_light_action: "Buy Emergency Lighting",
 
-    // Shared Auth Roles
+    // ==========================================
+    // SHARED AUTHENTICATION ROLES
+    // ==========================================
     role_citizen: "Citizen",
     role_shopkeeper: "Shop Owner",
     role_warden: "Warden",
 
-    // Login
+    // ==========================================
+    // IDENTITY GATEKEEPER (LOGIN) KEYS
+    // ==========================================
     login_badge: "SECURE PORTAL",
     login_subtitle: "Emergency Routing & Assessment",
     login_context_prefix: "Authenticating as: ",
@@ -224,7 +302,9 @@ export const englishTranslations: TranslationDictionary = {
     login_err_conn_title: "Connection Error",
     login_err_conn_msg: "Failed to reach the secure authentication server. Please check your network connection.",
 
-    // Registration
+    // ==========================================
+    // IDENTITY REGISTRATION KEYS
+    // ==========================================
     reg_title: "JOIN AAGAHI",
     reg_subtitle: "Create your community identity",
     reg_user_label: "Unique Username",
@@ -254,7 +334,9 @@ export const englishTranslations: TranslationDictionary = {
     reg_err_conn_title: "Connection Error",
     reg_err_conn_msg: "Failed to reach the secure gateway. Please check your network connection.",
 
-    // Routing
+    // ==========================================
+    // ROUTING & EVACUATION SCREEN KEYS
+    // ==========================================
     routing_back_btn: "← Back to Dashboard",
     routing_header_title: "Active Hazard Zone",
     routing_map_fallback: "Map rendering requires a physical mobile device.",
@@ -266,7 +348,9 @@ export const englishTranslations: TranslationDictionary = {
     routing_err_fetch: "Failed to retrieve spatial data.",
     routing_err_conn: "Network connection to the spatial engine failed.",
 
-    // Explore Boilerplate
+    // ==========================================
+    // EXPLORE (DOCUMENTATION) SCREEN KEYS
+    // ==========================================
     explore_title: "Explore",
     explore_subtitle: "This starter app includes example\ncode to help you get started.",
     explore_link_docs: "Expo documentation",
@@ -291,7 +375,9 @@ export const englishTranslations: TranslationDictionary = {
     explore_col5_part2: " component uses the powerful ",
     explore_col5_part3: " library to animate opening this hint.",
 
-    // Fund Screen
+    // ==========================================
+    // CROWD-FUNDING SCREEN KEYS
+    // ==========================================
     fund_header_title: "Community Crowdfunding",
     fund_back_btn: "← Back to Dashboard",
     fund_list_title: "Active GoFundMe Campaigns",

@@ -1,15 +1,38 @@
 /**
  * ============================================================================
  * @file types.ts
+ * @title Aagahi Localization Dictionary Type Definitions
  * @description
  * Defines the strict structural typing contract for all language translation 
- * dictionaries across the Aagahi platform. Ensures compile-time safety for 
- * both English and Urdu text keys.
+ * dictionaries across the Aagahi platform. Ensures absolute compile-time safety 
+ * for both English and Urdu text keys.
+ * 
+ * @architecture
+ * - STRICT CONTRACT: By forcing both `en.ts` and `ur.ts` to implement this 
+ *   interface, TypeScript mathematically guarantees that no translation key is 
+ *   ever missing from either dictionary, completely eradicating "undefined text" 
+ *   crashes at runtime.
+ * - MODULAR NAMESPACING: Keys are structurally grouped by their target UI 
+ *   component/screen to maintain memory organization and prevent namespace collisions.
+ * 
+ * @upgrades_in_this_build
+ * - PROFILE HUB KEYS: Injected comprehensive keys for the new User Operations Hub, 
+ *   including dynamic activity tracking and the robust infrastructure survey.
+ * - DASHBOARD OVERHAUL KEYS: Added keys for the new "Community Safety Status" 
+ *   banner and localized supplementary action descriptions.
  * ============================================================================
  */
 
+/**
+ * @interface TranslationDictionary
+ * @description The master interface mapping every single localized string in the application.
+ * Any property added here MUST be implemented in all language files natively.
+ */
 export interface TranslationDictionary {
-    // Dashboard & Master HUD Keys
+    
+    // ==========================================
+    // DASHBOARD & MASTER HUD KEYS
+    // ==========================================
     dashboardTitle: string;
     languageToggleLabel: string;
     welcomeMessage: string;
@@ -21,7 +44,21 @@ export interface TranslationDictionary {
     dest_placeholder: string;
     find_route: string;
     
-    // FAB Rail (Bottom Navigation Buttons)
+    // NEW: Dashboard UI Upgrade Keys
+    dashboard_banner_title: string;
+    dashboard_banner_sub: string;
+    dashboard_section_core: string;
+    dashboard_map_desc: string;
+    dashboard_safe_desc: string;
+    dashboard_report_desc: string;
+    dashboard_scan_desc: string;
+    dashboard_warden_desc: string;
+    dashboard_shop_desc: string;
+    dashboard_chat_desc: string;
+    
+    // ==========================================
+    // FLOATING ACTION BUTTON (FAB) RAIL
+    // ==========================================
     fab_navigate: string;
     fab_chat: string;
     fab_warden: string;
@@ -31,7 +68,45 @@ export interface TranslationDictionary {
     fab_blockage: string;
     fab_fund: string;
 
-    // Chat Screen Localization Keys
+    // ==========================================
+    // NEW: PROFILE & TELEMETRY HUB KEYS
+    // ==========================================
+    profile_header_title: string;
+    profile_default_user: string;
+    profile_default_email: string;
+    profile_shop_title: string;
+    
+    profile_ops_title: string;
+    profile_ops_empty: string;
+    profile_ops_initiated: string;
+    
+    profile_survey_title: string;
+    profile_survey_sub: string;
+    profile_survey_q1: string;
+    profile_survey_q1_ph: string;
+    profile_survey_q2: string;
+    profile_survey_q2_ph: string;
+    profile_survey_q3: string;
+    profile_survey_q3_ph: string;
+    profile_survey_q4: string;
+    profile_survey_q4_ph: string;
+    profile_survey_btn: string;
+    profile_survey_btn_loading: string;
+    
+    profile_help_title: string;
+    profile_help_sub: string;
+    profile_logout_btn: string;
+    
+    profile_alert_val_title: string;
+    profile_alert_val_msg: string;
+    profile_alert_succ_title: string;
+    profile_alert_succ_msg: string;
+    profile_alert_err_title: string;
+    profile_alert_err_msg: string;
+
+    // ==========================================
+    // CHAT SCREEN KEYS
+    // ==========================================
     chat_header_title: string;
     chat_back_btn: string;
     chat_new_zone: string;
@@ -46,7 +121,9 @@ export interface TranslationDictionary {
     chat_video_sub: string;
     chat_file_sub: string;
 
-    // Report Screen Localization Keys
+    // ==========================================
+    // UNIFIED REPORTING SCREEN KEYS
+    // ==========================================
     report_back_btn: string;
     report_header_title: string;
     report_step1_title: string;
@@ -71,7 +148,9 @@ export interface TranslationDictionary {
     report_alert_db_err: string;
     report_alert_conn_err: string;
 
-    // Shopkeeper Screen Localization Keys
+    // ==========================================
+    // SHOPKEEPER PORTAL KEYS
+    // ==========================================
     shop_header_subtitle: string;
     shop_header_title: string;
     shop_qr_title: string;
@@ -102,7 +181,9 @@ export interface TranslationDictionary {
     shop_geo_alert_title: string;
     shop_geo_alert_msg: string;
 
-    // Warden Screen Localization Keys
+    // ==========================================
+    // WARDEN ADMINISTRATION KEYS
+    // ==========================================
     warden_back_btn: string;
     warden_header_title: string;
     warden_queue_title: string;
@@ -142,7 +223,9 @@ export interface TranslationDictionary {
     warden_err_net_disturb_title: string;
     warden_err_spatial_enc: string;
 
-    // Scanner Screen Localization Keys
+    // ==========================================
+    // DUAL-SCANNER SYSTEM KEYS
+    // ==========================================
     scanner_header_ai: string;
     scanner_header_qr: string;
     scanner_back_btn: string;
@@ -199,12 +282,16 @@ export interface TranslationDictionary {
     scanner_fix_light_desc: string;
     scanner_fix_light_action: string;
 
-    // Shared Auth Roles
+    // ==========================================
+    // SHARED AUTHENTICATION ROLES
+    // ==========================================
     role_citizen: string;
     role_shopkeeper: string;
     role_warden: string;
 
-    // Login Screen Localization Keys
+    // ==========================================
+    // IDENTITY GATEKEEPER (LOGIN) KEYS
+    // ==========================================
     login_badge: string;
     login_subtitle: string;
     login_context_prefix: string;
@@ -225,7 +312,9 @@ export interface TranslationDictionary {
     login_err_conn_title: string;
     login_err_conn_msg: string;
 
-    // Registration Screen Localization Keys
+    // ==========================================
+    // IDENTITY REGISTRATION KEYS
+    // ==========================================
     reg_title: string;
     reg_subtitle: string;
     reg_user_label: string;
@@ -255,7 +344,9 @@ export interface TranslationDictionary {
     reg_err_conn_title: string;
     reg_err_conn_msg: string;
 
-    // Routing & Evacuation Screen Localization Keys
+    // ==========================================
+    // ROUTING & EVACUATION SCREEN KEYS
+    // ==========================================
     routing_back_btn: string;
     routing_header_title: string;
     routing_map_fallback: string;
@@ -267,7 +358,9 @@ export interface TranslationDictionary {
     routing_err_fetch: string;
     routing_err_conn: string;
 
-    // Explore Screen Localization Keys
+    // ==========================================
+    // EXPLORE (DOCUMENTATION) SCREEN KEYS
+    // ==========================================
     explore_title: string;
     explore_subtitle: string;
     explore_link_docs: string;
@@ -292,7 +385,9 @@ export interface TranslationDictionary {
     explore_col5_part2: string;
     explore_col5_part3: string;
 
-    // Fund Screen Localization Keys
+    // ==========================================
+    // CROWD-FUNDING SCREEN KEYS
+    // ==========================================
     fund_header_title: string;
     fund_back_btn: string;
     fund_list_title: string;

@@ -1,16 +1,33 @@
 /**
  * ============================================================================
  * @file ur.ts
+ * @title Aagahi Urdu Localization Dictionary
  * @description
  * The primary Urdu language dictionary utilizing native Nastaliq-friendly 
- * Arabic script strings for the frontend rendering engine.
+ * Arabic script strings for the frontend rendering engine. Conforms strictly 
+ * to the TranslationDictionary interface contract to ensure zero runtime 
+ * undefined text crashes.
+ * 
+ * @architecture
+ * - COMPILE-TIME SAFETY: Explicitly typed as `: TranslationDictionary`, 
+ *   forcing the TypeScript compiler to verify all keys exist.
+ * - NASTALIQ OPTIMIZED: Strings are carefully crafted to render perfectly 
+ *   in standard RTL (Right-to-Left) rendering matrices on iOS and Android.
+ * 
+ * @upgrades_in_this_build
+ * - PROFILE HUB KEYS: Translated the new Operations Tracker and Infrastructure 
+ *   Survey into native Urdu to support localized vendor partnerships.
+ * - DASHBOARD OVERHAUL KEYS: Added RTL translations for the new "Community 
+ *   Safety Status" dynamic banner.
  * ============================================================================
  */
 
 import { TranslationDictionary } from './types';
 
 export const urduTranslations: TranslationDictionary = {
-    // Dashboard
+    // ==========================================
+    // DASHBOARD & MASTER HUD KEYS
+    // ==========================================
     dashboardTitle: "آگاہی ڈیش بورڈ",
     languageToggleLabel: "انگریزی میں تبدیل کریں",
     welcomeMessage: "کمانڈ سینٹر میں خوش آمدید۔",
@@ -21,6 +38,22 @@ export const urduTranslations: TranslationDictionary = {
     start_placeholder: "شروعاتی مقام",
     dest_placeholder: "منزل درج کریں (مثلاً کلفٹن)",
     find_route: "محفوظ راستہ تلاش کریں",
+
+    // NEW: Dashboard UI Upgrade Keys
+    dashboard_banner_title: "کمیونٹی سیفٹی اسٹیٹس",
+    dashboard_banner_sub: "آپ کے مقامی ماحول کی فعال طور پر نگرانی کی جا رہی ہے۔",
+    dashboard_section_core: "بنیادی مقامی آپریشنز",
+    dashboard_map_desc: "متحرک خطرات دیکھیں",
+    dashboard_safe_desc: "محفوظ راستے کا حساب",
+    dashboard_report_desc: "ساختی خرابیوں کی نشاندہی کریں",
+    dashboard_scan_desc: "اے آئی کمرے کی تشخیص",
+    dashboard_warden_desc: "انتظامیہ",
+    dashboard_shop_desc: "تشکیل",
+    dashboard_chat_desc: "کمیونٹی چیٹ",
+
+    // ==========================================
+    // FLOATING ACTION BUTTON (FAB) RAIL
+    // ==========================================
     fab_navigate: "راستہ",
     fab_chat: "بات چیت",
     fab_warden: "نگہبان",
@@ -30,7 +63,45 @@ export const urduTranslations: TranslationDictionary = {
     fab_blockage: "رکاوٹ",
     fab_fund: "فنڈ",
 
-    // Chat
+    // ==========================================
+    // NEW: PROFILE & TELEMETRY HUB KEYS
+    // ==========================================
+    profile_header_title: "صارف کے آپریشنز کا پروفائل",
+    profile_default_user: "تصدیق شدہ صارف",
+    profile_default_email: "user@aagahi.com",
+    profile_shop_title: "رجسٹرڈ سہولت:",
+    
+    profile_ops_title: "ایکٹو آپریشنز میٹرکس",
+    profile_ops_empty: "رجسٹری میں کوئی فعال رپورٹس یا فنڈ ریزر موجود نہیں ہیں۔",
+    profile_ops_initiated: "آغاز: ",
+    
+    profile_survey_title: "انفراسٹرکچر انٹیلیجنس",
+    profile_survey_sub: "عمارت کے بنیادی ڈھانچے اور وینڈر کی مہارت کے بارے میں دستی ڈیٹا فراہم کریں جسے ہمارا اے آئی میٹرکس تصویروں سے مقامی طور پر نہیں نکال سکتا۔",
+    profile_survey_q1: "بجلی کی وائرنگ کی تخمینی عمر",
+    profile_survey_q1_ph: "مثلاً 1998 میں نصب، 25+ سال پرانی",
+    profile_survey_q2: "آخری ساختی تزئین و آرائش",
+    profile_survey_q2_ph: "مثلاً 2023 میں چھت کی جزوی مرمت",
+    profile_survey_q3: "آگاہی برانڈ پارٹنر رجسٹریشن",
+    profile_survey_q3_ph: "کیا آپ آگ بجھانے والے آلات یا حفاظتی سامان فروخت کرتے ہیں؟ یہاں بتائیں۔",
+    profile_survey_q4: "عمومی حفاظتی تاثرات / تجاویز",
+    profile_survey_q4_ph: "کوئی بھی اضافی ماحولیاتی خدشات جمع کرائیں...",
+    profile_survey_btn: "الگورتھم میں شامل کریں",
+    profile_survey_btn_loading: "میٹرکس پروسیس ہو رہا ہے...",
+    
+    profile_help_title: "ایمرجنسی سپورٹ سینٹر",
+    profile_help_sub: "آگاہی وارڈنز سے براہ راست رابطہ کریں۔",
+    profile_logout_btn: "سیشن محفوظ طریقے سے ختم کریں",
+    
+    profile_alert_val_title: "توثیق کی خرابی",
+    profile_alert_val_msg: "براہ کرم ترسیل شروع کرنے سے پہلے کم از کم ایک سروے میٹرک پُر کریں۔",
+    profile_alert_succ_title: "ٹیلی میٹری محفوظ ہو گئی",
+    profile_alert_succ_msg: "آپ کی انفراسٹرکچر انٹیلیجنس اور وینڈر پروفائل کامیابی کے ساتھ آگاہی الگورتھم میں ضم کر دی گئی ہے۔",
+    profile_alert_err_title: "ترسیل کی خرابی",
+    profile_alert_err_msg: "سروے کا ڈیٹا کلاؤڈ میٹرکس میں محفوظ کرنے میں ناکام۔",
+
+    // ==========================================
+    // CHAT SCREEN KEYS
+    // ==========================================
     chat_header_title: "کمیونٹی چیٹ رومز",
     chat_back_btn: "← ڈیش بورڈ پر واپس جائیں",
     chat_new_zone: "نیا زون",
@@ -45,7 +116,9 @@ export const urduTranslations: TranslationDictionary = {
     chat_video_sub: "محفوظ میڈیا فائل چلانے کے لیے ٹیپ کریں",
     chat_file_sub: "تصدیق شدہ دستاویز • محفوظ پی ڈی ایف",
 
-    // Report
+    // ==========================================
+    // UNIFIED REPORTING SCREEN KEYS
+    // ==========================================
     report_back_btn: "← ڈیش بورڈ پر واپس جائیں",
     report_header_title: "مسئلے کی رپورٹ کریں",
     report_step1_title: "1. مقام کی تصدیق کریں",
@@ -70,7 +143,9 @@ export const urduTranslations: TranslationDictionary = {
     report_alert_db_err: "ڈیٹا بیس کی رکاوٹ کی خرابی",
     report_alert_conn_err: "سرور سے نیٹ ورک کا کنکشن غیر متوقع طور پر منقطع ہو گیا۔",
 
-    // Shopkeeper
+    // ==========================================
+    // SHOPKEEPER PORTAL KEYS
+    // ==========================================
     shop_header_subtitle: "تاجر پورٹل",
     shop_header_title: "سہولت کا انتظام",
     shop_qr_title: "کرپٹوگرافک کمپلائنس کیو آر",
@@ -101,7 +176,9 @@ export const urduTranslations: TranslationDictionary = {
     shop_geo_alert_title: "جغرافیائی رجسٹری",
     shop_geo_alert_msg: "مقام کیلیبریشن ماڈیول فعال ہے۔",
 
-    // Warden
+    // ==========================================
+    // WARDEN ADMINISTRATION KEYS
+    // ==========================================
     warden_back_btn: "← میپ انجن پر واپس جائیں",
     warden_header_title: "وارڈن آپریشنز کمانڈ",
     warden_queue_title: "زیر التوا تصدیقی قطار",
@@ -141,7 +218,9 @@ export const urduTranslations: TranslationDictionary = {
     warden_err_net_disturb_title: "نیٹ ورک میں خلل",
     warden_err_spatial_enc: "[مقامی ڈیٹا انکرپشن کی خرابی]",
 
-    // Scanner
+    // ==========================================
+    // DUAL-SCANNER SYSTEM KEYS
+    // ==========================================
     scanner_header_ai: "اے آئی روم سیفٹی سکینر",
     scanner_header_qr: "سہولت کیو آر سکینر",
     scanner_back_btn: "← ڈیش بورڈ پر واپس جائیں",
@@ -198,12 +277,16 @@ export const urduTranslations: TranslationDictionary = {
     scanner_fix_light_desc: "بجلی بند ہونے یا آگ لگنے کے دوران فعال ایمرجنسی لائٹنگ لوگوں کو محفوظ طریقے سے باہر نکلنے کا راستہ تلاش کرنے میں مدد کرتی ہے۔",
     scanner_fix_light_action: "ایمرجنسی لائٹنگ خریدیں",
 
-    // Shared Auth Roles
+    // ==========================================
+    // SHARED AUTHENTICATION ROLES
+    // ==========================================
     role_citizen: "شہری",
     role_shopkeeper: "دکان دار",
     role_warden: "نگہبان",
 
-    // Login
+    // ==========================================
+    // IDENTITY GATEKEEPER (LOGIN) KEYS
+    // ==========================================
     login_badge: "محفوظ پورٹل",
     login_subtitle: "ایمرجنسی روٹنگ اور تشخیص",
     login_context_prefix: "بطور تصدیق کر رہے ہیں: ",
@@ -224,7 +307,9 @@ export const urduTranslations: TranslationDictionary = {
     login_err_conn_title: "کنکشن کی خرابی",
     login_err_conn_msg: "محفوظ تصدیقی سرور تک پہنچنے میں ناکام۔ براہ کرم اپنا نیٹ ورک کنکشن چیک کریں۔",
 
-    // Registration
+    // ==========================================
+    // IDENTITY REGISTRATION KEYS
+    // ==========================================
     reg_title: "آگاہی میں شامل ہوں",
     reg_subtitle: "اپنی کمیونٹی کی شناخت بنائیں",
     reg_user_label: "منفرد صارف نام",
@@ -254,7 +339,9 @@ export const urduTranslations: TranslationDictionary = {
     reg_err_conn_title: "کنکشن کی خرابی",
     reg_err_conn_msg: "محفوظ گیٹ وے تک پہنچنے میں ناکام۔ براہ کرم اپنا نیٹ ورک کنکشن چیک کریں۔",
 
-    // Routing
+    // ==========================================
+    // ROUTING & EVACUATION SCREEN KEYS
+    // ==========================================
     routing_back_btn: "← ڈیش بورڈ پر واپس جائیں",
     routing_header_title: "فعال خطرے کا زون",
     routing_map_fallback: "نقشہ دیکھنے کے لیے موبائل ڈیوائس کی ضرورت ہے۔",
@@ -266,7 +353,9 @@ export const urduTranslations: TranslationDictionary = {
     routing_err_fetch: "مقامی ڈیٹا بازیافت کرنے میں ناکام۔",
     routing_err_conn: "مقامی انجن سے نیٹ ورک کا کنکشن ناکام ہو گیا۔",
 
-    // Explore Boilerplate
+    // ==========================================
+    // EXPLORE (DOCUMENTATION) SCREEN KEYS
+    // ==========================================
     explore_title: "دریافت کریں",
     explore_subtitle: "اس اسٹارٹر ایپ میں آپ کی مدد کے لیے\nمثالی کوڈ شامل ہے۔",
     explore_link_docs: "ایکسپو دستاویزات",
@@ -291,7 +380,9 @@ export const urduTranslations: TranslationDictionary = {
     explore_col5_part2: " جزو اس اشارے کو کھولنے کے لیے طاقتور ",
     explore_col5_part3: " لائبریری کا استعمال کرتا ہے۔",
 
-    // Fund Screen
+    // ==========================================
+    // CROWD-FUNDING SCREEN KEYS
+    // ==========================================
     fund_header_title: "کمیونٹی کراؤڈ فنڈنگ",
     fund_back_btn: "← ڈیش بورڈ پر واپس جائیں",
     fund_list_title: "فعال گو فنڈ می مہمات",

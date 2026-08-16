@@ -21,8 +21,8 @@
  * - NATIVE RENDERING: Utilizes native spatial engines (`react-native-maps`) 
  *   strictly bound to hardware-accelerated viewports for 60FPS performance.
  * - ASYNC ISOLATION: Features robust, exponential-backoff network fallback systems.
- * - UI GUARANTEE: Implements explicitly defined `zIndex` and `elevation` layers 
- *   to ensure Floating Action Buttons (FABs) and HUD panels never clip or vanish.
+ * - UX DECLUTTERING: Removed all redundant Floating Action Buttons (FABs) from the 
+ *   map viewport to ensure a distraction-free spatial experience.
  * ============================================================================
  */
 
@@ -569,6 +569,7 @@ const calculateHaversineDistance = (latitudeNodeOne: number, longitudeNodeOne: n
 /**
  * @function calculateBearing
  * @description Calculates the exact compass heading (0-360 degrees) for map rotation natively.
+ * It enforces trigonometric logic upon spherical coordinates.
  */
 const calculateBearing = (latitudeOrigin: number, longitudeOrigin: number, latitudeDestination: number, longitudeDestination: number): number => {
   try {
@@ -641,12 +642,11 @@ export default function DashboardScreen(): React.JSX.Element {
   // ==========================================
   // 1. GLOBAL IDENTITY, LOCALIZATION & REFS
   // ==========================================
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   
   // WADIAH LOCALIZATION ENGINE EXTRACTION
   const languageContextPayload = useLanguage();
   const activeLanguageCode: string = languageContextPayload.locale;
-  const switchLanguageFunction: (locale: 'en' | 'ur') => void = languageContextPayload.setLocale;
   const translateFunction: (key: any) => string = languageContextPayload.t;
   const toggleLanguageFunction: () => void = languageContextPayload.toggleLanguage;
 
@@ -1548,13 +1548,22 @@ export default function DashboardScreen(): React.JSX.Element {
 
   const triggerDualScannerMenu = (): void => {
     try {
+      // WADIAH: Deep Localization for the Scanner Prompt Dialog Box
+      const alertTitle: string = translateFunction('scanner_header_ai') || 'Aagahi Spatial Optical Scanner';
+      const alertSubtitle: string = translateFunction('scanner_btn_scan_another') || 'Select the explicitly targeted optical scanning hardware module you wish to initialize natively:';
+      const cancelText: string = translateFunction('scanner_btn_cancel') || 'Cancel Hardware Operation';
+      
+      // Fallback strings if keys are missing from dictionary
+      const aiScannerText: string = translateFunction('scanner_ai_action') || 'AI Room Safety Assessment';
+      const qrScannerText: string = translateFunction('scanner_header_qr') || 'Scan Facility Compliance QR';
+
       Alert.alert(
-        'Aagahi Spatial Optical Scanner',
-        'Select the explicitly targeted optical scanning hardware module you wish to initialize natively:',
+        alertTitle,
+        alertSubtitle,
         [
-          { text: 'Cancel Hardware Operation', style: 'cancel' },
+          { text: cancelText, style: 'cancel' },
           {
-            text: 'AI Room Safety Assessment',
+            text: aiScannerText,
             onPress: () => {
               try {
                 router.push({ pathname: '/scanner', params: { mode: 'ai' } });
@@ -1564,7 +1573,7 @@ export default function DashboardScreen(): React.JSX.Element {
             },
           },
           {
-            text: 'Scan Facility Compliance QR',
+            text: qrScannerText,
             onPress: () => {
               try {
                 router.push({ pathname: '/scanner', params: { mode: 'qr' } });
@@ -1582,7 +1591,7 @@ export default function DashboardScreen(): React.JSX.Element {
   };
 
   // ==========================================
-  // PILLAR 5: UNIFIED REPORTING LOGIC (THE STABLE BASELINE)
+  // PILLAR 5: UNIFIED REPORTING LOGIC
   // ==========================================
 
   const activateReportingModeState = (selectedReportingInteractionModeEnum: InteractionMode): void => {
@@ -1679,15 +1688,6 @@ export default function DashboardScreen(): React.JSX.Element {
     }
   };
 
-  const handleSecureLogoutProcedure = async (): Promise<void> => {
-    try {
-      await logout();
-      router.replace('/');
-    } catch (logoutPipelineArchitectureError: unknown) {
-      console.error('[handleSecureLogoutProcedure] Authentication token deletion logout pipeline failed structurally natively implicitly: ', logoutPipelineArchitectureError);
-    }
-  };
-
   // ==========================================
   // PREMIUM HOME DASHBOARD RENDER LOGIC
   // ==========================================
@@ -1723,11 +1723,11 @@ export default function DashboardScreen(): React.JSX.Element {
             </TouchableOpacity>
           </View>
 
-          {/* Abstract Clip Art / Data Visualization Banner Placeholder Area */}
-          <View style={[styles.dashboardBannerImagePlaceholder, isDarkMode && { backgroundColor: '#2B2D42' }]}>
-            <MaterialCommunityIcons name="shield-cross-outline" size={48} color={COLORS.primary} style={{ opacity: 0.8 }} />
-            <Text style={[styles.dashboardBannerText, isDarkMode && { color: COLORS.surface }]}>System Telemetry Active</Text>
-            <Text style={styles.dashboardBannerSubtext}>Monitoring Live Environment Grid Securely.</Text>
+          {/* WADIAH UPGRADE: Redesigned the robotic "Telemetry" red box into a soothing "Community Safety Status" card natively. */}
+          <View style={[styles.dashboardBannerImagePlaceholder, { backgroundColor: 'rgba(16, 185, 129, 0.15)', borderColor: COLORS.emeraldGreen }]}>
+            <MaterialCommunityIcons name="shield-home-outline" size={48} color={COLORS.emeraldGreen} style={{ opacity: 0.9 }} />
+            <Text style={[styles.dashboardBannerText, { color: COLORS.emeraldGreen }]}>{translateFunction('safe_path_title') || 'Community Safety Status'}</Text>
+            <Text style={[styles.dashboardBannerSubtext, { color: COLORS.textDark }]}>Your local environment is actively monitored.</Text>
           </View>
         </View>
 
@@ -1736,17 +1736,17 @@ export default function DashboardScreen(): React.JSX.Element {
           <Text style={[styles.dashboardSectionTitle, isDarkMode && { color: COLORS.surface }]}>Core Spatial Operations</Text>
           
           <View style={styles.dashboardActionGridFlexRow}>
-            {/* Action 1: Navigation Engine natively */}
+            {/* WADIAH UPGRADE: Replaced the duplicate "Spatial Map" card with the native "Community Fund" card. */}
             <TouchableOpacity 
               style={[styles.dashboardActionCardItem, isDarkMode && { backgroundColor: '#2B2D42', shadowColor: 'transparent' }]} 
               activeOpacity={0.85} 
-              onPress={() => setInteractionMode('view')}
+              onPress={() => router.push('/fund')}
             >
-              <View style={[styles.dashboardActionIconWrapperBackground, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
-                <MaterialCommunityIcons name="map-search-outline" size={32} color={COLORS.safeRoute} />
+              <View style={[styles.dashboardActionIconWrapperBackground, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
+                <MaterialCommunityIcons name="hand-coin-outline" size={32} color={COLORS.warning} />
               </View>
-              <Text style={[styles.dashboardActionCardTitle, isDarkMode && { color: COLORS.surface }]}>Spatial Map</Text>
-              <Text style={styles.dashboardActionCardDescription}>View dynamic hazards</Text>
+              <Text style={[styles.dashboardActionCardTitle, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_fund') || 'Community Fund'}</Text>
+              <Text style={styles.dashboardActionCardDescription}>Support local infrastructure.</Text>
             </TouchableOpacity>
 
             {/* Action 2: Safe Route Calculation directly */}
@@ -1758,7 +1758,7 @@ export default function DashboardScreen(): React.JSX.Element {
               <View style={[styles.dashboardActionIconWrapperBackground, { backgroundColor: 'rgba(139, 92, 246, 0.15)' }]}>
                 <MaterialCommunityIcons name="directions-fork" size={32} color={COLORS.alternateRoute} />
               </View>
-              <Text style={[styles.dashboardActionCardTitle, isDarkMode && { color: COLORS.surface }]}>{translateFunction('safe_path_title')}</Text>
+              <Text style={[styles.dashboardActionCardTitle, isDarkMode && { color: COLORS.surface }]}>{translateFunction('safe_path_title') || 'Safe Routing'}</Text>
               <Text style={styles.dashboardActionCardDescription}>Secure path calculation</Text>
             </TouchableOpacity>
           </View>
@@ -1773,7 +1773,7 @@ export default function DashboardScreen(): React.JSX.Element {
               <View style={[styles.dashboardActionIconWrapperBackground, { backgroundColor: 'rgba(217, 4, 41, 0.15)' }]}>
                 <MaterialCommunityIcons name="alert-decagram-outline" size={32} color={COLORS.primary} />
               </View>
-              <Text style={[styles.dashboardActionCardTitle, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_report')}</Text>
+              <Text style={[styles.dashboardActionCardTitle, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_report') || 'Report Hazard'}</Text>
               <Text style={styles.dashboardActionCardDescription}>Flag structural anomalies</Text>
             </TouchableOpacity>
 
@@ -1786,7 +1786,7 @@ export default function DashboardScreen(): React.JSX.Element {
               <View style={[styles.dashboardActionIconWrapperBackground, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
                 <MaterialCommunityIcons name="qrcode-scan" size={32} color={COLORS.emeraldGreen} />
               </View>
-              <Text style={[styles.dashboardActionCardTitle, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_scan')}</Text>
+              <Text style={[styles.dashboardActionCardTitle, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_scan') || 'Optical Scanner'}</Text>
               <Text style={styles.dashboardActionCardDescription}>AI room evaluation matrix</Text>
             </TouchableOpacity>
           </View>
@@ -1795,7 +1795,7 @@ export default function DashboardScreen(): React.JSX.Element {
           {user?.role === 'warden' && (
              <TouchableOpacity style={[styles.dashboardFullWidthButtonStruct, isDarkMode && { backgroundColor: '#2B2D42' }]} onPress={() => router.push('/warden')}>
                <MaterialCommunityIcons name="shield-account-variant" size={24} color={COLORS.primary} style={{ marginRight: 12 }} />
-               <Text style={[styles.dashboardFullWidthButtonText, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_warden')} Administration</Text>
+               <Text style={[styles.dashboardFullWidthButtonText, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_warden') || 'Warden'} Administration</Text>
                <MaterialCommunityIcons name="chevron-right" size={24} color={COLORS.textMuted} style={{ marginLeft: 'auto' }} />
              </TouchableOpacity>
           )}
@@ -1803,18 +1803,19 @@ export default function DashboardScreen(): React.JSX.Element {
           {user?.role === 'shopkeeper' && (
              <TouchableOpacity style={[styles.dashboardFullWidthButtonStruct, isDarkMode && { backgroundColor: '#2B2D42' }]} onPress={() => router.push('/shopkeeper')}>
                <MaterialCommunityIcons name="storefront-outline" size={24} color={COLORS.oceanBlue} style={{ marginRight: 12 }} />
-               <Text style={[styles.dashboardFullWidthButtonText, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_portal')} Directory Setup</Text>
+               {/* WADIAH UPGRADE: Localized the Directory Setup Portal text natively */}
+               <Text style={[styles.dashboardFullWidthButtonText, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_portal') || 'Directory Setup'} Configuration</Text>
                <MaterialCommunityIcons name="chevron-right" size={24} color={COLORS.textMuted} style={{ marginLeft: 'auto' }} />
              </TouchableOpacity>
           )}
 
           <TouchableOpacity style={[styles.dashboardFullWidthButtonStruct, isDarkMode && { backgroundColor: '#2B2D42' }]} onPress={() => router.push('/chat')}>
              <MaterialCommunityIcons name="forum-outline" size={24} color={COLORS.sunflowerYellow} style={{ marginRight: 12 }} />
-             <Text style={[styles.dashboardFullWidthButtonText, isDarkMode && { color: COLORS.surface }]}>{translateFunction('chat_header_title')}</Text>
+             <Text style={[styles.dashboardFullWidthButtonText, isDarkMode && { color: COLORS.surface }]}>{translateFunction('chat_header_title') || 'Community Chat'}</Text>
              <MaterialCommunityIcons name="chevron-right" size={24} color={COLORS.textMuted} style={{ marginLeft: 'auto' }} />
           </TouchableOpacity>
           
-          <div style={{ height: 100 }} />
+          <View style={{ height: 100 }} />
         </ScrollView>
 
         {/* ========================================== */}
@@ -1827,7 +1828,6 @@ export default function DashboardScreen(): React.JSX.Element {
             <Text style={[styles.bottomNavigationItemText, { color: COLORS.primary, fontWeight: '700' }]}>Home</Text>
           </TouchableOpacity>
 
-          {/* WADIAH LOCALIZATION TOGGLE PILL */}
           <TouchableOpacity 
             style={styles.bottomNavigationItemButton} 
             activeOpacity={0.8}
@@ -1844,7 +1844,8 @@ export default function DashboardScreen(): React.JSX.Element {
             <Text style={styles.bottomNavigationItemText}>Map</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.bottomNavigationItemButton} activeOpacity={0.8} onPress={handleSecureLogoutProcedure}>
+          {/* WADIAH UPGRADE: Relinked to dynamic Profile Page instead of immediate logout mechanism natively. */}
+          <TouchableOpacity style={styles.bottomNavigationItemButton} activeOpacity={0.8} onPress={() => router.push('/profile')}>
             <MaterialCommunityIcons name="account-circle-outline" size={26} color={COLORS.textMuted} />
             <Text style={styles.bottomNavigationItemText}>Profile</Text>
           </TouchableOpacity>
@@ -1986,37 +1987,32 @@ export default function DashboardScreen(): React.JSX.Element {
           {/* ========================================== */}
           
           {interactionMode === 'view' && (
-            <View style={styles.hardwareTopBarOverlayViewBox}>
+            <View style={[styles.hardwareTopBarOverlayViewBox, { justifyContent: 'space-between' }]}>
               
-              <TouchableOpacity onPress={cancelActiveModalityState} style={[styles.hardwareProfileAvatarButtonSquare, isDarkMode && { backgroundColor: COLORS.surfaceDark }, { marginRight: 10, width: 'auto', paddingHorizontal: 16 }]}>
-                <MaterialCommunityIcons name="home-outline" size={22} color={COLORS.primary} style={{ marginRight: 6 }}/>
-                <Text style={{fontWeight: '700', color: COLORS.primary}}>Home Dashboard</Text>
+              <TouchableOpacity onPress={cancelActiveModalityState} style={[styles.hardwareProfileAvatarButtonSquare, isDarkMode && { backgroundColor: COLORS.surfaceDark }, { width: 'auto', paddingHorizontal: 16 }]}>
+                <MaterialCommunityIcons name="arrow-left" size={22} color={COLORS.primary} style={{ marginRight: 6 }}/>
+                <Text style={{fontWeight: '700', color: COLORS.primary}}>Exit Map</Text>
               </TouchableOpacity>
-              
-              <View style={[styles.universalSearchBoxContainerStruct, isDarkMode && { backgroundColor: COLORS.surfaceDark }, {flex: 1}]}>
-                <Text style={[styles.universalSearchTextTitleString, isDarkMode && { color: COLORS.surface }]}>
-                  {translateFunction('dashboardTitle')}
-                </Text>
+
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <TouchableOpacity
+                  style={[styles.hardwareProfileAvatarButtonSquare, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}
+                  activeOpacity={0.8}
+                  onPress={toggleLanguageFunction}
+                >
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: COLORS.primary }}>
+                    {activeLanguageCode === 'en' ? 'اردو' : 'EN'}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.hardwareProfileAvatarButtonSquare, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}
+                  activeOpacity={0.8}
+                  onPress={() => setIsDarkMode(!isDarkMode)}
+                >
+                  <MaterialCommunityIcons name={isDarkMode ? 'white-balance-sunny' : 'moon-waning-crescent'} size={22} color={COLORS.primary} />
+                </TouchableOpacity>
               </View>
-
-              {/* WADIAH TOP BAR LANGUAGE TOGGLE */}
-              <TouchableOpacity
-                style={[styles.hardwareProfileAvatarButtonSquare, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}
-                activeOpacity={0.8}
-                onPress={toggleLanguageFunction}
-              >
-                <Text style={{ fontSize: 14, fontWeight: '800', color: COLORS.primary }}>
-                  {activeLanguageCode === 'en' ? 'اردو' : 'EN'}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.hardwareProfileAvatarButtonSquare, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}
-                activeOpacity={0.8}
-                onPress={() => setIsDarkMode(!isDarkMode)}
-              >
-                <MaterialCommunityIcons name={isDarkMode ? 'white-balance-sunny' : 'moon-waning-crescent'} size={22} color={COLORS.primary} />
-              </TouchableOpacity>
             </View>
           )}
 
@@ -2030,7 +2026,7 @@ export default function DashboardScreen(): React.JSX.Element {
                 <TouchableOpacity onPress={cancelActiveModalityState} style={styles.routingEngineHardwareBackButtonWrap}>
                   <MaterialCommunityIcons name="arrow-left" size={24} color={isDarkMode ? COLORS.surface : COLORS.textDark} />
                 </TouchableOpacity>
-                <Text style={[styles.routingEngineTitleLabelStringText, isDarkMode && { color: COLORS.surface }]}>{translateFunction('safe_path_title')}</Text>
+                <Text style={[styles.routingEngineTitleLabelStringText, isDarkMode && { color: COLORS.surface }]}>{translateFunction('safe_path_title') || 'Safe Path Navigation'}</Text>
               </View>
 
               {/* START LOCATION INPUT */}
@@ -2040,7 +2036,7 @@ export default function DashboardScreen(): React.JSX.Element {
                   style={[styles.routingEngineInputFieldComponent, isDarkMode && { backgroundColor: '#2B2D42', color: COLORS.surface }]}
                   value={startLocationText}
                   onChangeText={(changedTextParameterString: string) => executeLocationSearch(changedTextParameterString, 'start')}
-                  placeholder={translateFunction('start_placeholder')}
+                  placeholder={translateFunction('start_placeholder') || 'Starting Point'}
                   placeholderTextColor={COLORS.textMuted}
                 />
                 {isSearchingStartLocation && (
@@ -2098,7 +2094,7 @@ export default function DashboardScreen(): React.JSX.Element {
                   style={[styles.routingEngineInputFieldComponent, isDarkMode && { backgroundColor: '#2B2D42', color: COLORS.surface }]}
                   value={destinationText}
                   onChangeText={(changedTextParameterString: string) => executeLocationSearch(changedTextParameterString, 'destination')}
-                  placeholder={translateFunction('dest_placeholder')}
+                  placeholder={translateFunction('dest_placeholder') || 'Enter Destination'}
                   placeholderTextColor={COLORS.textMuted}
                 />
                 {isSearchingDestinationLocation && (
@@ -2182,7 +2178,7 @@ export default function DashboardScreen(): React.JSX.Element {
                 ) : (
                   <>
                     <MaterialCommunityIcons name="shield-check" size={20} color={COLORS.surface} />
-                    <Text style={styles.calculateSafeRouteSubmissionButtonStringLabelText}>{translateFunction('find_route')}</Text>
+                    <Text style={styles.calculateSafeRouteSubmissionButtonStringLabelText}>{translateFunction('find_route') || 'Find Safe Route'}</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -2194,13 +2190,16 @@ export default function DashboardScreen(): React.JSX.Element {
           {/* ========================================== */}
           {(interactionMode === 'report_single' || interactionMode === 'report_dual') && (
             <View style={[styles.unifiedReportingPanelAbsoluteContainerBox, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}>
+              {/* WADIAH UPGRADE: Localized the Reporting Bottom Sheet Native Texts */}
               <Text style={[styles.unifiedReportingPanelMasterTitleStringText, isDarkMode && { color: COLORS.surface }]}>
-                {interactionMode === 'report_dual' ? 'Initialize Road Blockage Matrix' : 'Pinpoint Hazard Epicenter Coordinate Location'}
+                {interactionMode === 'report_dual' 
+                  ? translateFunction('report_step2_title') || 'Initialize Road Blockage Matrix' 
+                  : translateFunction('report_step1_title') || 'Pinpoint Hazard Epicenter Coordinate Location'}
               </Text>
               <Text style={styles.unifiedReportingPanelMasterSubtitleStringText}>
                 {interactionMode === 'report_dual'
                   ? 'Drag both physical pins structurally to denote the exact start and end coordinate points of the blocked road vector segment on the mapping grid.'
-                  : 'Drag the primary anchor pin accurately to the exact physical geographical hardware location of the structural hazard anomaly.'}
+                  : translateFunction('report_step1_desc') || 'Drag the primary anchor pin accurately to the exact physical geographical hardware location of the structural hazard anomaly.'}
               </Text>
 
               <View style={styles.unifiedReportingPanelSegmentedToggleContainerRow}>
@@ -2214,7 +2213,7 @@ export default function DashboardScreen(): React.JSX.Element {
                       interactionMode === 'report_single' && styles.unifiedReportingPanelSegmentedToggleButtonLabelStringActive,
                     ]}
                   >
-                    Point Hardware Hazard
+                    {translateFunction('report_primary_marker') || 'Point Hardware Hazard'}
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -2224,18 +2223,18 @@ export default function DashboardScreen(): React.JSX.Element {
                   <Text
                     style={[styles.unifiedReportingPanelSegmentedToggleButtonLabelString, interactionMode === 'report_dual' && styles.unifiedReportingPanelSegmentedToggleButtonLabelStringActive]}
                   >
-                    Road Vector Blockage
+                    {translateFunction('report_cat_road') || 'Road Vector Blockage'}
                   </Text>
                 </TouchableOpacity>
               </View>
 
               <View style={styles.unifiedReportingPanelSubmissionActionRowFlex}>
                 <TouchableOpacity style={styles.unifiedReportingPanelCancelButtonNode} activeOpacity={0.85} onPress={cancelActiveModalityState}>
-                  <Text style={styles.unifiedReportingPanelCancelButtonLabelText}>Abort Execution</Text>
+                  <Text style={styles.unifiedReportingPanelCancelButtonLabelText}>{translateFunction('chat_cancel') || 'Abort Execution'}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.unifiedReportingPanelConfirmButtonNode} activeOpacity={0.85} onPress={confirmReportCoordinatesValidationDispatch}>
                   <MaterialCommunityIcons name="check-bold" size={18} color={COLORS.surface} />
-                  <Text style={styles.unifiedReportingPanelConfirmButtonLabelText}>Secure Location</Text>
+                  <Text style={styles.unifiedReportingPanelConfirmButtonLabelText}>{translateFunction('report_submit_btn') || 'Secure Location'}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -2290,94 +2289,7 @@ export default function DashboardScreen(): React.JSX.Element {
             </View>
           )}
 
-          {/* ========================================== */}
-          {/* 6. FLOATING ACTION BUTTON RAIL             */}
-          {/* ========================================== */}
-          {interactionMode === 'view' && (
-            <View style={styles.omniFloatingActionButtonRailAbsoluteContainer}>
-              
-              <TouchableOpacity style={[styles.omniFloatingActionButtonCoreItemNode, styles.omniFloatingActionButtonPrimaryAccentNode]} activeOpacity={0.85} onPress={initiateRoutingMode}>
-                <MaterialCommunityIcons name="directions" size={26} color={COLORS.surface} />
-                <Text style={[styles.omniFloatingActionButtonLabelTextString, { color: COLORS.surface }]}>{translateFunction('fab_navigate')}</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.omniFloatingActionButtonCoreItemNode, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}
-                activeOpacity={0.85}
-                onPress={() => router.push('/chat')}
-              >
-                <MaterialCommunityIcons name="forum-outline" size={24} color={isDarkMode ? COLORS.surface : COLORS.textDark} />
-                <Text style={[styles.omniFloatingActionButtonLabelTextString, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_chat')}</Text>
-              </TouchableOpacity>
-
-              {user?.role === 'warden' && (
-                <TouchableOpacity
-                  style={[styles.omniFloatingActionButtonCoreItemNode, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}
-                  activeOpacity={0.85}
-                  onPress={() => router.push('/warden')}
-                >
-                  <MaterialCommunityIcons name="shield-account-outline" size={24} color={COLORS.primary} />
-                  <Text style={[styles.omniFloatingActionButtonLabelTextString, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_warden')}</Text>
-                </TouchableOpacity>
-              )}
-
-              {user?.role === 'shopkeeper' && (
-                <TouchableOpacity
-                  style={[styles.omniFloatingActionButtonCoreItemNode, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}
-                  activeOpacity={0.85}
-                  onPress={() => router.push('/shopkeeper')}
-                >
-                  <MaterialCommunityIcons
-                    name="storefront-outline"
-                    size={24}
-                    color={isDarkMode ? COLORS.surface : COLORS.textDark}
-                  />
-                  <Text style={[styles.omniFloatingActionButtonLabelTextString, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_portal')}</Text>
-                </TouchableOpacity>
-              )}
-
-              <TouchableOpacity
-                style={[styles.omniFloatingActionButtonCoreItemNode, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}
-                activeOpacity={0.85}
-                onPress={triggerDualScannerMenu}
-              >
-                <MaterialCommunityIcons name="qrcode-scan" size={24} color={isDarkMode ? COLORS.surface : COLORS.textDark} />
-                <Text style={[styles.omniFloatingActionButtonLabelTextString, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_scan')}</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.omniFloatingActionButtonCoreItemNode, { backgroundColor: COLORS.primary }]}
-                activeOpacity={0.85}
-                onPress={() => activateReportingModeState('report_single')}
-              >
-                <MaterialCommunityIcons name="alert-octagon" size={24} color={COLORS.surface} />
-                <Text style={[styles.omniFloatingActionButtonLabelTextString, { color: COLORS.surface }]}>{translateFunction('fab_report')}</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.omniFloatingActionButtonCoreItemNode, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}
-                activeOpacity={0.85}
-                onPress={() => activateReportingModeState('report_dual')}
-              >
-                <MaterialCommunityIcons name="road-variant" size={24} color={isDarkMode ? COLORS.surface : COLORS.textDark} />
-                <Text style={[styles.omniFloatingActionButtonLabelTextString, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_blockage')}</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.omniFloatingActionButtonCoreItemNode, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}
-                activeOpacity={0.85}
-                onPress={() => router.push('/fund')}
-              >
-                <MaterialCommunityIcons
-                  name="hand-coin-outline"
-                  size={24}
-                  color={isDarkMode ? COLORS.surface : COLORS.textDark}
-                />
-                <Text style={[styles.omniFloatingActionButtonLabelTextString, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_fund')}</Text>
-              </TouchableOpacity>
-
-            </View>
-          )}
+          {/* UX UPGRADE: Removed Floating Action Buttons entirely from map viewport to eliminate UI clutter explicitly natively. */}
 
           {/* ========================================== */}
           {/* 7. GLOBAL LOADING INDICATOR OVERLAY        */}
@@ -2445,7 +2357,6 @@ const styles = StyleSheet.create({
   },
   universalSearchTextTitleString: { fontSize: 15, fontWeight: '700', color: COLORS.textDark },
   hardwareProfileAvatarButtonSquare: {
-    width: 48,
     height: 48,
     borderRadius: 14,
     marginLeft: 10,
@@ -2665,24 +2576,6 @@ const styles = StyleSheet.create({
     marginLeft: 6,
   },
 
-  omniFloatingActionButtonRailAbsoluteContainer: { position: 'absolute', right: 16, bottom: 24, alignItems: 'center' },
-  omniFloatingActionButtonCoreItemNode: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.surface,
-    marginTop: 12,
-    shadowColor: COLORS.fabShadow,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  omniFloatingActionButtonPrimaryAccentNode: { backgroundColor: COLORS.safeRoute, marginTop: 0 },
-  omniFloatingActionButtonLabelTextString: { fontSize: 10, fontWeight: '800', color: COLORS.textDark, marginTop: 2 },
-
   globalApplicationLoadingOverlayShieldViewBox: {
     position: 'absolute',
     top: Platform.OS === 'ios' ? 110 : 80,
@@ -2736,22 +2629,18 @@ const styles = StyleSheet.create({
   },
   dashboardBannerImagePlaceholder: {
     marginTop: 24,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     borderRadius: 20,
     padding: 24,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
   },
   dashboardBannerText: {
-    color: COLORS.surface,
     fontSize: 18,
     fontWeight: '800',
     marginTop: 12,
   },
   dashboardBannerSubtext: {
-    color: 'rgba(255, 255, 255, 0.7)',
     fontSize: 13,
     marginTop: 4,
   },

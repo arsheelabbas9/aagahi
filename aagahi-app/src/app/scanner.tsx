@@ -30,6 +30,9 @@
  *   has been explicitly unpacked and heavily typed.
  * - LOCALIZATION INTEGRATED: Safely mapped all static strings, wizard arrays, and 
  *   action rules to the `useLanguage` translation dictionary.
+ * - GROK AI LANGUAGE PASS-THROUGH: Injected `activeLanguageCode` into the backend 
+ *   analysis payload to dynamically instruct the AI model to respond in the user's 
+ *   chosen language (Urdu or English) natively.
  * ============================================================================
  */
 
@@ -304,6 +307,11 @@ export default function ScannerScreen(): React.JSX.Element {
   
   const languageContextObject = useLanguage();
   const translateKey: (key: any) => string = languageContextObject.t;
+  
+  // EXPLICIT LANGUAGE EXTRACTION: Extract the user's active locale ('en' or 'ur').
+  // This value is directly passed to the AI Backend payload to inform Grok AI 
+  // which language it should natively output the safety assessment in.
+  const activeLanguageCode: string = languageContextObject.locale; 
   
   const rawScanMode: string | string[] | undefined = routerParameters.mode;
   const scanMode: string = (typeof rawScanMode === 'string' ? rawScanMode : 'qr');
@@ -689,6 +697,14 @@ export default function ScannerScreen(): React.JSX.Element {
         executionAbortController.abort();
       }, 60000);
 
+      // EXPLICIT PAYLOAD CONSTRUCTION: Inject the active user language into the JSON stream.
+      // This mathematically guarantees that the Python backend instructs Grok AI to return 
+      // the safety assessment in the exact localized script (English or Nastaliq Urdu) the user expects.
+      const requestPayloadObject: Record<string, any> = {
+        images: imagePayloadArray,
+        language: activeLanguageCode,
+      };
+
       let networkResponse: Response;
       try {
         const fetchOptions: RequestInit = {
@@ -696,7 +712,7 @@ export default function ScannerScreen(): React.JSX.Element {
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ images: imagePayloadArray }),
+          body: JSON.stringify(requestPayloadObject),
           signal: executionAbortController.signal,
         };
         
