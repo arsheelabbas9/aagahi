@@ -1726,7 +1726,8 @@ export default function DashboardScreen(): React.JSX.Element {
           {/* WADIAH UPGRADE: Redesigned the robotic "Telemetry" red box into a soothing "Community Safety Status" card natively. */}
           <View style={[styles.dashboardBannerImagePlaceholder, { backgroundColor: 'rgba(16, 185, 129, 0.15)', borderColor: COLORS.emeraldGreen }]}>
             <MaterialCommunityIcons name="shield-home-outline" size={48} color={COLORS.emeraldGreen} style={{ opacity: 0.9 }} />
-            <Text style={[styles.dashboardBannerText, { color: COLORS.emeraldGreen }]}>{translateFunction('safe_path_title') || 'Community Safety Status'}</Text>
+            {/* WADIAH UX FIX: Explicitly mutated the banner title text color to pure white (COLORS.surface) for higher contrast natively as requested. */}
+            <Text style={[styles.dashboardBannerText, { color: COLORS.surface }]}>{translateFunction('safe_path_title') || 'Community Safety Status'}</Text>
             <Text style={[styles.dashboardBannerSubtext, { color: COLORS.textDark }]}>Your local environment is actively monitored.</Text>
           </View>
         </View>
