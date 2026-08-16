@@ -16,10 +16,19 @@
  *   Brand Partnerships natively.
  * - ASYNC STATE LOCKING: All form submissions and network fetches are 
  *   protected by explicit boolean locks to prevent memory leaks and API spam.
+ * - LIVE TELEMETRY SYNC: Bypasses legacy mock data to dynamically fetch active
+ *   user operations natively from the Supabase/FastAPI backend endpoint.
+ * - DEEP LOCALIZATION: 100% of UI strings are abstracted into the `useLanguage`
+ *   engine for seamless Urdu/English toggling.
  * ============================================================================
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { 
+  useState, 
+  useEffect, 
+  useRef 
+} from 'react';
+
 import {
   StyleSheet,
   View,
@@ -32,18 +41,24 @@ import {
   Platform,
   KeyboardAvoidingView
 } from 'react-native';
+
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
-// Global Contexts
+// Global Contexts & Network Configuration
 import { useAuth, UserSession } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
+import { API_BASE_URL } from '../config/api';
 
 // ============================================================================
 // STRUCTURAL TYPING & INTERFACES
 // ============================================================================
 
+/**
+ * @interface ThemeColors
+ * @description Defines the strict hexadecimal boundaries for the Profile UI.
+ */
 interface ThemeColors {
   primary: string;
   surface: string;
@@ -58,7 +73,8 @@ interface ThemeColors {
 
 /**
  * @interface ActivityRecord
- * @description Defines the structural payload for user activities (Reports/Funds).
+ * @description Defines the structural payload for user activities natively returned 
+ * from the PostgreSQL database via FastAPI.
  */
 interface ActivityRecord {
   id: string;
@@ -97,23 +113,46 @@ const COLORS: ThemeColors = {
 
 export default function ProfileScreen(): React.JSX.Element {
   
-  // --- Global Identity & Localization Engine ---
-  const { user, logout } = useAuth();
+  // ==========================================
+  // 1. GLOBAL IDENTITY & LOCALIZATION EXTRACTION
+  // ==========================================
+  
+  // Unpacking Auth Context mathematically
+  const authContextPayload = useAuth();
+  const user: any = authContextPayload.user;
+  const executeLogoutFunction: () => Promise<void> = authContextPayload.logout;
+
+  // Unpacking Language Context mathematically
   const languageContextPayload = useLanguage();
   const translateKey: (key: any) => string = languageContextPayload.t;
 
-  // --- State Management ---
-  const [activitiesData, setActivitiesData] = useState<ActivityRecord[]>([]);
-  const [isFetchingActivities, setIsFetchingActivities] = useState<boolean>(true);
+  // ==========================================
+  // 2. STATE MANAGEMENT (EXPLICITLY UNPACKED)
+  // ==========================================
+  
+  const activitiesDataTuple = useState<ActivityRecord[]>([]);
+  const activitiesData: ActivityRecord[] = activitiesDataTuple[0];
+  const setActivitiesData: React.Dispatch<React.SetStateAction<ActivityRecord[]>> = activitiesDataTuple[1];
+
+  const isFetchingActivitiesTuple = useState<boolean>(true);
+  const isFetchingActivities: boolean = isFetchingActivitiesTuple[0];
+  const setIsFetchingActivities: React.Dispatch<React.SetStateAction<boolean>> = isFetchingActivitiesTuple[1];
 
   // Survey Form States
-  const [surveyPayload, setSurveyPayload] = useState<InfrastructureSurveyPayload>({
+  const initialSurveyPayload: InfrastructureSurveyPayload = {
     electricalSystemAge: '',
     lastRenovationDate: '',
     vendorExpertise: '',
     generalFeedback: ''
-  });
-  const [isSubmittingSurvey, setIsSubmittingSurvey] = useState<boolean>(false);
+  };
+
+  const surveyPayloadTuple = useState<InfrastructureSurveyPayload>(initialSurveyPayload);
+  const surveyPayload: InfrastructureSurveyPayload = surveyPayloadTuple[0];
+  const setSurveyPayload: React.Dispatch<React.SetStateAction<InfrastructureSurveyPayload>> = surveyPayloadTuple[1];
+
+  const isSubmittingSurveyTuple = useState<boolean>(false);
+  const isSubmittingSurvey: boolean = isSubmittingSurveyTuple[0];
+  const setIsSubmittingSurvey: React.Dispatch<React.SetStateAction<boolean>> = isSubmittingSurveyTuple[1];
 
   const componentMountStatusRef = useRef<boolean>(true);
 
@@ -124,34 +163,72 @@ export default function ProfileScreen(): React.JSX.Element {
   useEffect(() => {
     componentMountStatusRef.current = true;
     executeActivityDataRetrieval();
+    
     return () => {
       componentMountStatusRef.current = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /**
    * @function executeActivityDataRetrieval
-   * @description Simulates a secure network fetch to retrieve the user's active 
-   * operational timeline (pending reports, active fundraisers).
+   * @description Executes a secure network fetch to retrieve the user's active 
+   * operational timeline directly from the Supabase cloud via the FastAPI backend.
+   * Completely bypasses legacy mock data arrays.
+   * 
+   * @async
    */
   const executeActivityDataRetrieval = async (): Promise<void> => {
     try {
       if (componentMountStatusRef.current) setIsFetchingActivities(true);
 
-      // SIMULATED NETWORK LATENCY FOR ARCHITECTURAL STABILITY
-      await new Promise(resolve => setTimeout(resolve, 1200));
-
-      // Mock Data Initialization based on User Identity
-      const mockUserActivityDatabase: ActivityRecord[] = [
-        { id: 'ACT-001', type: 'report', title: 'Electrical Fault Report', status: 'pending', date: '2026-08-16' },
-        { id: 'ACT-002', type: 'fundraiser', title: 'Liaquatabad Road Repair', status: 'approved', date: '2026-08-14' },
-      ];
-
-      if (componentMountStatusRef.current) {
-        setActivitiesData(mockUserActivityDatabase);
+      // GUARD: Mathematically verify that the user identity pointer exists
+      const isUserIdentityMissing: boolean = !user || !user.id;
+      if (isUserIdentityMissing) {
+        console.warn("[ProfileScreen] Active user identity pointer is null. Aborting network fetch.");
+        if (componentMountStatusRef.current) setIsFetchingActivities(false);
+        return;
       }
-    } catch (networkError: unknown) {
-      console.error("[ProfileScreen.executeActivityDataRetrieval] Activity telemetry sync failed: ", networkError);
+
+      // EXPLICIT ENDPOINT: Construct the secure routing URL mapping to this specific user natively
+      const fullyQualifiedEndpointURL: string = `${API_BASE_URL}/api/users/${user.id}/activities`;
+
+      // EXECUTE SECURE FETCH TO FASTAPI BACKEND
+      const networkResponseObject: Response = await fetch(fullyQualifiedEndpointURL, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      // VALIDATE NETWORK TRANSMISSION SUCCESS
+      const isNetworkTransmissionSuccessful: boolean = networkResponseObject.ok;
+      if (!isNetworkTransmissionSuccessful) {
+         throw new Error(`Backend architecture rejected the request. HTTP Status: ${networkResponseObject.status}`);
+      }
+
+      // DECOMPRESS JSON PAYLOAD
+      const rawJsonResponseData: any = await networkResponseObject.json();
+      
+      // EXPLICIT TYPE CASTING: Parse the data array strictly into the ActivityRecord interface
+      const mathematicallyParsedActivitiesArray: ActivityRecord[] = rawJsonResponseData.data as ActivityRecord[];
+
+      // MUTATE STATE SECURELY
+      if (componentMountStatusRef.current) {
+        setActivitiesData(mathematicallyParsedActivitiesArray);
+      }
+
+    } catch (networkExecutionError: unknown) {
+      let explicitErrorMessage: string = 'Unknown network failure during telemetry sync.';
+      if (networkExecutionError instanceof Error) {
+          explicitErrorMessage = networkExecutionError.message;
+      }
+      console.error("[ProfileScreen.executeActivityDataRetrieval] Activity telemetry sync failed explicitly: ", explicitErrorMessage);
+      
+      // Fallback: If network fails, supply an empty array to prevent map/iteration crashes in the UI natively
+      if (componentMountStatusRef.current) {
+          setActivitiesData([]);
+      }
     } finally {
       if (componentMountStatusRef.current) setIsFetchingActivities(false);
     }
@@ -160,10 +237,11 @@ export default function ProfileScreen(): React.JSX.Element {
   /**
    * @function handleSurveySubmission
    * @description Processes the Infrastructure & Vendor Partnership Survey.
-   * Enforces strict validation before simulating a payload transmission to the Python backend.
+   * Enforces strict validation before simulating a payload transmission.
    */
   const handleSurveySubmission = async (): Promise<void> => {
     try {
+      // 1. Validation Logic
       const isSurveyEmpty: boolean = 
         surveyPayload.electricalSystemAge.trim() === '' && 
         surveyPayload.lastRenovationDate.trim() === '' &&
@@ -171,32 +249,34 @@ export default function ProfileScreen(): React.JSX.Element {
         surveyPayload.generalFeedback.trim() === '';
 
       if (isSurveyEmpty) {
-        Alert.alert('Validation Error', 'Please populate at least one survey metric before initiating transmission.');
+        Alert.alert(
+          translateKey('profile_alert_val_title') || 'Validation Error', 
+          translateKey('profile_alert_val_msg') || 'Please populate at least one survey metric before initiating transmission.'
+        );
         return;
       }
 
+      // 2. Engagement Lock
       if (componentMountStatusRef.current) setIsSubmittingSurvey(true);
 
-      // SIMULATED NETWORK TRANSMISSION TO FASTAPI BACKEND
+      // SIMULATED NETWORK TRANSMISSION TO FASTAPI BACKEND FOR SURVEY
       await new Promise(resolve => setTimeout(resolve, 1500));
 
       Alert.alert(
-        'Telemetry Secured', 
-        'Your infrastructure intelligence and vendor profile have been successfully integrated into the Aagahi algorithm. Our routing engine will prioritize your expertise natively.'
+        translateKey('profile_alert_succ_title') || 'Telemetry Secured', 
+        translateKey('profile_alert_succ_msg') || 'Your infrastructure intelligence and vendor profile have been successfully integrated.'
       );
 
-      // Purge state post-success
+      // 3. Purge state post-success
       if (componentMountStatusRef.current) {
-        setSurveyPayload({
-          electricalSystemAge: '',
-          lastRenovationDate: '',
-          vendorExpertise: '',
-          generalFeedback: ''
-        });
+        setSurveyPayload(initialSurveyPayload);
       }
     } catch (submissionError: unknown) {
       console.error("[ProfileScreen.handleSurveySubmission] Payload integration failed explicitly: ", submissionError);
-      Alert.alert('Transmission Error', 'Failed to securely commit survey data to the cloud matrix.');
+      Alert.alert(
+        translateKey('profile_alert_err_title') || 'Transmission Error', 
+        translateKey('profile_alert_err_msg') || 'Failed to securely commit survey data to the cloud matrix.'
+      );
     } finally {
       if (componentMountStatusRef.current) setIsSubmittingSurvey(false);
     }
@@ -208,7 +288,7 @@ export default function ProfileScreen(): React.JSX.Element {
    */
   const executeSecureLogout = async (): Promise<void> => {
     try {
-      await logout();
+      await executeLogoutFunction();
       router.replace('/');
     } catch (logoutError: unknown) {
       console.error("[ProfileScreen.executeSecureLogout] Authentication termination failed natively: ", logoutError);
@@ -219,6 +299,10 @@ export default function ProfileScreen(): React.JSX.Element {
   // RENDER HELPER FUNCTIONS
   // ============================================================================
 
+  /**
+   * @function renderStatusBadge
+   * @description Dynamically applies hex colors and icons based on the backend status response.
+   */
   const renderStatusBadge = (statusString: string): React.JSX.Element => {
     let badgeBackgroundColor: string = COLORS.warning;
     let iconCharacter: any = 'clock-outline';
@@ -243,6 +327,12 @@ export default function ProfileScreen(): React.JSX.Element {
   // MAIN RENDER TREE
   // ============================================================================
 
+  // Extract explicit variables for UI
+  const profileHeaderString: string = translateKey('profile_header_title');
+  const fallbackUsernameString: string = translateKey('profile_default_user');
+  const fallbackEmailString: string = translateKey('profile_default_email');
+  const roleTranslationString: string = translateKey(`role_${user?.role || 'citizen'}`);
+
   return (
     <SafeAreaView style={styles.safeAreaContainer}>
       
@@ -251,7 +341,7 @@ export default function ProfileScreen(): React.JSX.Element {
         <TouchableOpacity activeOpacity={0.8} onPress={() => router.back()} style={styles.backButtonNode}>
           <MaterialCommunityIcons name="arrow-left" size={24} color={COLORS.textDark} />
         </TouchableOpacity>
-        <Text style={styles.topNavigationHeaderTitle}>User Operations Profile</Text>
+        <Text style={styles.topNavigationHeaderTitle}>{profileHeaderString}</Text>
       </View>
 
       <KeyboardAvoidingView 
@@ -271,8 +361,8 @@ export default function ProfileScreen(): React.JSX.Element {
             <View style={styles.identityAvatarCircleLayer}>
               <MaterialCommunityIcons name="account-tie" size={48} color={COLORS.primary} />
             </View>
-            <Text style={styles.identityUsernameTextTitle}>{user?.username || 'Verified User'}</Text>
-            <Text style={styles.identityEmailSubText}>{user?.email || 'user@aagahi.com'}</Text>
+            <Text style={styles.identityUsernameTextTitle}>{user?.username || fallbackUsernameString}</Text>
+            <Text style={styles.identityEmailSubText}>{user?.email || fallbackEmailString}</Text>
             
             <View style={styles.identityRoleBadgeLayer}>
               <MaterialCommunityIcons 
@@ -280,13 +370,13 @@ export default function ProfileScreen(): React.JSX.Element {
                 size={16} 
                 color={COLORS.primary} 
               />
-              <Text style={styles.identityRoleBadgeTextString}>{String(user?.role || 'citizen').toUpperCase()}</Text>
+              <Text style={styles.identityRoleBadgeTextString}>{roleTranslationString.toUpperCase()}</Text>
             </View>
 
             {/* Shopkeeper Specific Injection */}
             {user?.role === 'shopkeeper' && user?.shop_name && (
               <View style={styles.shopkeeperTelemetryBox}>
-                <Text style={styles.shopkeeperTelemetryTitleText}>Registered Facility:</Text>
+                <Text style={styles.shopkeeperTelemetryTitleText}>{translateKey('profile_shop_title')}</Text>
                 <Text style={styles.shopkeeperTelemetryValueText}>{user.shop_name}</Text>
                 <Text style={styles.shopkeeperTelemetryValueText}>{user.shop_category}</Text>
               </View>
@@ -294,15 +384,15 @@ export default function ProfileScreen(): React.JSX.Element {
           </View>
 
           {/* ========================================== */}
-          {/* PILLAR 2: ACTIVE OPERATIONS TRACKER        */}
+          {/* PILLAR 2: LIVE OPERATIONS TRACKER (FETCHED)*/}
           {/* ========================================== */}
           <View style={styles.operationsTrackerCardContainer}>
-            <Text style={styles.sectionHeaderTitleString}>Active Operations Matrix</Text>
+            <Text style={styles.sectionHeaderTitleString}>{translateKey('profile_ops_title')}</Text>
             
             {isFetchingActivities ? (
               <ActivityIndicator color={COLORS.primary} size="small" style={{ marginVertical: 20 }} />
             ) : activitiesData.length === 0 ? (
-              <Text style={styles.emptyStateInformationText}>No active reports or fundraisers detected in the registry.</Text>
+              <Text style={styles.emptyStateInformationText}>{translateKey('profile_ops_empty')}</Text>
             ) : (
               activitiesData.map((activityNode: ActivityRecord) => (
                 <View key={activityNode.id} style={styles.activityItemRowFlexBox}>
@@ -315,7 +405,7 @@ export default function ProfileScreen(): React.JSX.Element {
                   </View>
                   <View style={styles.activityDetailsColumnBox}>
                     <Text style={styles.activityTitleTextString} numberOfLines={1}>{activityNode.title}</Text>
-                    <Text style={styles.activityDateTextString}>Initiated: {activityNode.date}</Text>
+                    <Text style={styles.activityDateTextString}>{translateKey('profile_ops_initiated')}{activityNode.date}</Text>
                   </View>
                   {renderStatusBadge(activityNode.status)}
                 </View>
@@ -329,17 +419,17 @@ export default function ProfileScreen(): React.JSX.Element {
           <View style={styles.infrastructureSurveyCardContainer}>
             <View style={styles.surveyHeaderRowBox}>
               <MaterialCommunityIcons name="clipboard-text-search-outline" size={24} color={COLORS.primary} />
-              <Text style={styles.surveyHeaderTitleText}>Infrastructure Intelligence</Text>
+              <Text style={styles.surveyHeaderTitleText}>{translateKey('profile_survey_title')}</Text>
             </View>
             <Text style={styles.surveyContextSubtitleText}>
-              Provide manual data regarding building infrastructure and vendor expertise that our AI matrix cannot natively extract from images.
+              {translateKey('profile_survey_sub')}
             </Text>
 
             <View style={styles.surveyInputGroupColumn}>
-              <Text style={styles.surveyInputLabelText}>Estimated Age of Electrical Wiring</Text>
+              <Text style={styles.surveyInputLabelText}>{translateKey('profile_survey_q1')}</Text>
               <TextInput 
                 style={styles.surveyInputFieldNode}
-                placeholder="e.g. Installed in 1998, 25+ Years old"
+                placeholder={translateKey('profile_survey_q1_ph')}
                 placeholderTextColor={COLORS.textMuted}
                 value={surveyPayload.electricalSystemAge}
                 onChangeText={(textStr: string) => setSurveyPayload({...surveyPayload, electricalSystemAge: textStr})}
@@ -347,10 +437,10 @@ export default function ProfileScreen(): React.JSX.Element {
             </View>
 
             <View style={styles.surveyInputGroupColumn}>
-              <Text style={styles.surveyInputLabelText}>Last Structural Renovation</Text>
+              <Text style={styles.surveyInputLabelText}>{translateKey('profile_survey_q2')}</Text>
               <TextInput 
                 style={styles.surveyInputFieldNode}
-                placeholder="e.g. Partial roof repair in 2023"
+                placeholder={translateKey('profile_survey_q2_ph')}
                 placeholderTextColor={COLORS.textMuted}
                 value={surveyPayload.lastRenovationDate}
                 onChangeText={(textStr: string) => setSurveyPayload({...surveyPayload, lastRenovationDate: textStr})}
@@ -358,10 +448,10 @@ export default function ProfileScreen(): React.JSX.Element {
             </View>
 
             <View style={styles.surveyInputGroupColumn}>
-              <Text style={styles.surveyInputLabelText}>Aagahi Brand Partner Registration</Text>
+              <Text style={styles.surveyInputLabelText}>{translateKey('profile_survey_q3')}</Text>
               <TextInput 
                 style={styles.surveyInputFieldNode}
-                placeholder="Do you sell Fire Extinguishers or Safety Gear? Specify here."
+                placeholder={translateKey('profile_survey_q3_ph')}
                 placeholderTextColor={COLORS.textMuted}
                 value={surveyPayload.vendorExpertise}
                 onChangeText={(textStr: string) => setSurveyPayload({...surveyPayload, vendorExpertise: textStr})}
@@ -369,10 +459,10 @@ export default function ProfileScreen(): React.JSX.Element {
             </View>
 
             <View style={styles.surveyInputGroupColumn}>
-              <Text style={styles.surveyInputLabelText}>General Safety Feedback / Suggestions</Text>
+              <Text style={styles.surveyInputLabelText}>{translateKey('profile_survey_q4')}</Text>
               <TextInput 
                 style={[styles.surveyInputFieldNode, { height: 80, textAlignVertical: 'top' }]}
-                placeholder="Submit any additional environmental concerns..."
+                placeholder={translateKey('profile_survey_q4_ph')}
                 placeholderTextColor={COLORS.textMuted}
                 multiline={true}
                 value={surveyPayload.generalFeedback}
@@ -389,7 +479,7 @@ export default function ProfileScreen(): React.JSX.Element {
               {isSubmittingSurvey ? (
                 <ActivityIndicator color={COLORS.surface} size="small" />
               ) : (
-                <Text style={styles.surveySubmissionButtonLabel}>Commit to Algorithm</Text>
+                <Text style={styles.surveySubmissionButtonLabel}>{translateKey('profile_survey_btn')}</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -401,8 +491,8 @@ export default function ProfileScreen(): React.JSX.Element {
             <TouchableOpacity style={styles.helpContactRowActionBox} activeOpacity={0.7}>
               <MaterialCommunityIcons name="lifebuoy" size={24} color={COLORS.info} style={{ marginRight: 12 }} />
               <View>
-                <Text style={styles.helpContactTitleText}>Emergency Support Center</Text>
-                <Text style={styles.helpContactSubtitleText}>Contact Aagahi Wardens directly.</Text>
+                <Text style={styles.helpContactTitleText}>{translateKey('profile_help_title')}</Text>
+                <Text style={styles.helpContactSubtitleText}>{translateKey('profile_help_sub')}</Text>
               </View>
               <MaterialCommunityIcons name="chevron-right" size={24} color={COLORS.border} style={{ marginLeft: 'auto' }} />
             </TouchableOpacity>
@@ -414,7 +504,7 @@ export default function ProfileScreen(): React.JSX.Element {
             onPress={executeSecureLogout}
           >
             <MaterialCommunityIcons name="logout-variant" size={20} color={COLORS.surface} />
-            <Text style={styles.absoluteLogoutButtonLabelText}>Terminate Session Securely</Text>
+            <Text style={styles.absoluteLogoutButtonLabelText}>{translateKey('profile_logout_btn')}</Text>
           </TouchableOpacity>
 
         </ScrollView>

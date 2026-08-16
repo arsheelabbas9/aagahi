@@ -5,14 +5,17 @@
 @description
 Central Nervous System for Spatial Hazard Tracking, Routing, Identity Management, 
 and AI Telemetry Logging. This module integrates Pillar 1 (Authentication), 
-Pillar 2 (Community Chat), Pillar 3 (Crowdfunding), and Pillar 4 (Merchant Compliance).
+Pillar 2 (Community Chat), Pillar 3 (Crowdfunding), Pillar 4 (Merchant Compliance),
+and now Pillar 5 (User Operations & Telemetry Hub).
 
 @architectural_notes
-- VERSION: 3.3.1 (UUID-Safe Compliance Mutation & Single-Letter Variable Purge)
+- VERSION: 3.4.0 (User Operations Matrix & Telemetry Hub Integration)
 - STORAGE: Integrated direct Supabase storage pipeline for AI evidence.
 - SECURITY: Implemented strict type enforcement for all Pydantic schemas.
 - COMPLIANCE: Direct PostgREST mutations now strictly target `owner_id` UUIDs 
   to mathematically guarantee accurate safety score updates without 404 drops.
+- TELEMETRY: Injected composite database aggregators to unify hazards and 
+  campaigns into a single chronological timeline for the User Profile Matrix.
 ============================================================================
 """
 
@@ -31,7 +34,7 @@ from PIL import Image
 # Internal Module Imports
 from spatial_engine import SpatialEngine
 from repositories import StoreRepository, UserRepository, HazardRepository, ChatRepository, FundRepository
-from kernel import get_db  # Imported to facilitate direct database access for the new AI Storage Pipeline and Compliance Mutations
+from kernel import get_db  # Imported to facilitate direct database access for the new AI Storage Pipeline, Compliance Mutations, and Telemetry Feeds
 
 # ==========================================
 # SYSTEM INITIALIZATION & ORCHESTRATION
@@ -42,7 +45,7 @@ from kernel import get_db  # Imported to facilitate direct database access for t
 app: FastAPI = FastAPI(
     title="Aagahi Routing & Hazard API",
     description="Central Nervous System for Spatial Hazard Tracking, Routing, Identity Management, and AI Telemetry Logging.",
-    version="3.3.1" # Version bumped to reflect Phase 3.3.1 Shopkeeper Direct Owner_ID Mutation and Variable Purge
+    version="3.4.0" # Version bumped to reflect Phase 3.4.0 User Telemetry Hub Integration
 )
 
 # ==========================================
@@ -202,7 +205,7 @@ def health_check() -> Dict[str, str]:
         # Construct and unpack the status response payload explicitly into memory
         response_payload: Dict[str, str] = {
             "status": "Aagahi API is Online",
-            "version": "3.3.1"
+            "version": "3.4.0"
         }
         
         return response_payload
@@ -379,6 +382,130 @@ def register(request: RegisterRequest) -> Dict[str, Any]:
         # Catch unexpected database driver failures, connection drops, or memory exceptions
         error_message: str = f"Internal Server Error during registration transaction: {str(system_exception)}"
         print(f"[API.register] CRITICAL FAILURE: {error_message}")
+        raise HTTPException(status_code=500, detail=error_message)
+
+
+# ==========================================
+# API ENDPOINTS: USER TELEMETRY & OPERATIONS HUB
+# ==========================================
+
+@app.get("/api/users/{user_id}/activities")
+def get_user_activities(user_id: str) -> Dict[str, Any]:
+    """
+    COMPOSITE TELEMETRY AGGREGATOR (PHASE 3.4.0)
+    Replaces frontend mock data by dynamically scanning disparate Supabase tables
+    (Hazards and Campaigns) to construct a unified, chronologically sorted activity feed.
+    
+    This function leverages direct Supabase queries to guarantee cross-table mathematical 
+    consistency for the User Profile Matrix.
+
+    Args:
+        user_id (str): The unique UUID string belonging to the authenticated user.
+
+    Returns:
+        Dict[str, Any]: A strictly typed JSON payload containing an array of normalized ActivityRecord objects.
+        
+    Raises:
+        HTTPException: 500 Internal Server Error if composite execution crashes or connections drop.
+    """
+    try:
+        # Step 1: Extract and sanitize the target UUID mathematically to prevent injection
+        target_user_uuid: str = user_id.strip()
+        
+        is_uuid_empty: bool = len(target_user_uuid) == 0
+        if is_uuid_empty:
+            raise ValueError("Target UUID cannot be mathematically empty during telemetry extraction.")
+
+        # Step 2: Establish the live connection to the PostgreSQL cluster
+        active_cloud_db: Any = get_db()
+        
+        # Step 3: Initialize memory arrays to hold the raw extracted rows
+        extracted_hazard_records: List[Dict[str, Any]] = []
+        extracted_campaign_records: List[Dict[str, Any]] = []
+
+        # --- SUB-ROUTINE A: EXTRACT HAZARD TELEMETRY ---
+        try:
+            # Query the `hazards` table natively, filtering strictly by the `reporter_id`
+            hazard_postgrest_response = active_cloud_db.table("hazards").select("id, hazard_type, status, created_at").eq("reporter_id", target_user_uuid).execute()
+            extracted_hazard_records = getattr(hazard_postgrest_response, "data", [])
+        except Exception as hazard_extraction_error:
+            # We fail softly here so a single table failure does not crash the entire unified feed
+            print(f"[API.get_user_activities] Warning: Hazard telemetry extraction failed natively: {str(hazard_extraction_error)}")
+            extracted_hazard_records = []
+            
+        # --- SUB-ROUTINE B: EXTRACT CROWDFUNDING TELEMETRY ---
+        try:
+            # Query the `campaigns` table natively, filtering strictly by the `organizer_id`
+            campaign_postgrest_response = active_cloud_db.table("campaigns").select("id, title, status, created_at").eq("organizer_id", target_user_uuid).execute()
+            extracted_campaign_records = getattr(campaign_postgrest_response, "data", [])
+        except Exception as campaign_extraction_error:
+            # Again, we fail softly to protect the primary feed rendering loop
+            print(f"[API.get_user_activities] Warning: Campaign telemetry extraction failed natively: {str(campaign_extraction_error)}")
+            extracted_campaign_records = []
+
+        # --- SUB-ROUTINE C: DATA NORMALIZATION & CONSOLIDATION ---
+        unified_activity_feed: List[Dict[str, Any]] = []
+        
+        # Normalize and map Hazard Records into the strict ActivityRecord interface structure
+        for raw_hazard in extracted_hazard_records:
+            structural_id: str = str(raw_hazard.get("id", ""))
+            raw_hazard_type: str = str(raw_hazard.get("hazard_type", "Unknown Hazard"))
+            
+            # Format the raw enum string into a human-readable title natively (e.g., 'fire_hazard' -> 'Fire Hazard')
+            formatted_title: str = raw_hazard_type.replace("_", " ").title()
+            
+            structural_status: str = str(raw_hazard.get("status", "pending"))
+            
+            # Extract the raw ISO-8601 timestamp and slice it mathematically to YYYY-MM-DD
+            raw_timestamp: str = str(raw_hazard.get("created_at", "2026-01-01"))
+            formatted_date: str = raw_timestamp[:10]
+            
+            unified_activity_feed.append({
+                "id": f"HAZ-{structural_id}",
+                "type": "report",
+                "title": formatted_title,
+                "status": structural_status,
+                "date": formatted_date
+            })
+            
+        # Normalize and map Campaign Records into the strict ActivityRecord interface structure
+        for raw_campaign in extracted_campaign_records:
+            structural_id: str = str(raw_campaign.get("id", ""))
+            formatted_title: str = str(raw_campaign.get("title", "Community Fundraiser"))
+            
+            # Campaigns are natively auto-approved upon creation in this architecture
+            structural_status: str = str(raw_campaign.get("status", "approved"))
+            
+            # Extract and slice the timestamp
+            raw_timestamp: str = str(raw_campaign.get("created_at", "2026-01-01"))
+            formatted_date: str = raw_timestamp[:10]
+            
+            unified_activity_feed.append({
+                "id": f"FND-{structural_id}",
+                "type": "fundraiser",
+                "title": formatted_title,
+                "status": structural_status,
+                "date": formatted_date
+            })
+            
+        # --- SUB-ROUTINE D: CHRONOLOGICAL SORTING ---
+        # Mathematically sort the unified feed descending based on the extracted date string natively
+        unified_activity_feed.sort(key=lambda activity_node: activity_node["date"], reverse=True)
+        
+        # Step 4: Construct and return the explicit success payload
+        success_payload: Dict[str, Any] = {
+            "status": "success",
+            "data": unified_activity_feed
+        }
+        
+        return success_payload
+        
+    except ValueError as validation_error:
+        print(f"[API.get_user_activities] VALIDATION ERROR: {str(validation_error)}")
+        raise HTTPException(status_code=400, detail=str(validation_error))
+    except Exception as system_exception:
+        error_message: str = f"Failed to execute composite telemetry aggregation: {str(system_exception)}"
+        print(f"[API.get_user_activities] CRITICAL ERROR: {error_message}")
         raise HTTPException(status_code=500, detail=error_message)
 
 
@@ -1066,10 +1193,6 @@ def analyze_room_safety(request: AiScanRequest) -> Dict[str, Any]:
     grounded in the data pattern above, not a documented guarantee from Groq -- the
     `usage` telemetry already logged below will show you within one real scan whether it
     held, and the tiered retry ladder still automatically compresses further if not.
-
-    Both levers point the same direction and are additive: a right-sized completion
-    budget plus one consolidated image, instead of three, should land comfortably under
-    the 8,000 TPM ceiling without touching the 3-photo capture or the hazard taxonomy.
 
     Args:
         request (AiScanRequest): The strongly-typed Pydantic model containing the array of
