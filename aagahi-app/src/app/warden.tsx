@@ -1,7 +1,7 @@
 /**
  * ============================================================================
  * @file warden.tsx
- * @title Enterprise-Grade Warden Verification & Resolution Engine (Master Build)
+ * @title Enterprise-Grade Warden Verification & Resolution Engine (Localized Master Build)
  * @author Arsheel Abbas (Aagahi Spatial Division)
  * 
  * @description 
@@ -30,6 +30,8 @@
  *    request has been aggressively unpacked, explicitly typed, and documented.
  * 5. ROBUST TELEMETRY: Implemented nested error-handling blocks specifically 
  *    designed to trap and stringify complex Python Pydantic validation failures.
+ * 6. GLOBAL LOCALIZATION (NEW): Injected `useLanguage` hook to dynamically render 
+ *    Urdu/English text based on persistent application state securely.
  * ============================================================================
  */
 
@@ -72,12 +74,16 @@ import {
 } from 'expo-router';
 
 // ============================================================================
-// 4. GLOBAL IDENTITY MANAGER & CENTRALIZED NETWORK CONFIGURATION
+// 4. GLOBAL IDENTITY MANAGER, LOCALIZATION & CENTRALIZED NETWORK CONFIGURATION
 // ============================================================================
 import { 
   useAuth,
   UserSession
 } from '../context/AuthContext';
+
+import { 
+  useLanguage 
+} from '../context/LanguageContext'; // INJECTED: Localization Context Hook
 
 import { 
   API_BASE_URL 
@@ -214,11 +220,16 @@ const API_DELETE_URL: string = `${API_BASE_URL}/api/hazards`;
 export default function WardenDashboardScreen(): React.JSX.Element {
   
   // ==========================================
-  // GLOBAL IDENTITY EXTRACTION
+  // GLOBAL IDENTITY & LOCALIZATION EXTRACTION
   // ==========================================
   
   // Access the persistent user session to extract the true Warden ID for authorization logs.
-  const { user } = useAuth();
+  const authContext = useAuth();
+  const user: UserSession | null = authContext.user;
+
+  // Access the global language state to seamlessly map UI elements to English/Urdu.
+  const languageContext = useLanguage();
+  const translateKey: (key: any) => string = languageContext.t;
 
   // ==========================================
   // EXPLICITLY TYPED STATE MANAGEMENT
@@ -346,7 +357,7 @@ export default function WardenDashboardScreen(): React.JSX.Element {
       } else {
         // Step 11: CRITICAL FIX - Safe Error Unpacking
         // Prevents React Native from crashing if the backend sends an array or object in the 'detail' field.
-        const defaultErrorMessage: string = "Failed to retrieve the reporting queue securely.";
+        const defaultErrorMessage: string = translateKey('warden_err_fetch_default');
         let finalErrorMessage: string = defaultErrorMessage;
         
         if (parsedResponse.detail) {
@@ -360,7 +371,7 @@ export default function WardenDashboardScreen(): React.JSX.Element {
               finalErrorMessage = JSON.stringify(parsedResponse.detail);
             } catch (serializationError: unknown) {
               console.warn("[fetchPendingReports] Detail serialization failed.", serializationError);
-              finalErrorMessage = "A complex database parsing error occurred while fetching reports.";
+              finalErrorMessage = translateKey('warden_err_fetch_complex');
             }
           }
         }
@@ -371,7 +382,7 @@ export default function WardenDashboardScreen(): React.JSX.Element {
 
     } catch (error: unknown) {
       // Step 12: Catch and log catastrophic network failures securely (e.g., Server Offline)
-      let errorMessage: string = "Failed to establish secure connection to the Warden database.";
+      let errorMessage: string = translateKey('warden_err_fetch_conn');
       
       if (error instanceof Error) {
         errorMessage = `Network Disruption Details: ${error.message}`;
@@ -430,8 +441,8 @@ export default function WardenDashboardScreen(): React.JSX.Element {
       if (isNetworkSuccess) {
         // Step 8: Provide immediate positive operational feedback via native alert
         Alert.alert(
-          "Verification Successful", 
-          "The anomaly has been logged to the public ledger and is now live on the community map."
+          translateKey('warden_succ_verify_title'), 
+          translateKey('warden_succ_verify_msg')
         );
         
         // Step 9: Re-trigger a full list fetch to ensure the 'Active Reports' list 
@@ -441,7 +452,7 @@ export default function WardenDashboardScreen(): React.JSX.Element {
       } else {
         // Step 10: CRITICAL FIX - Native Array Parsing Guard for Alert.alert execution
         // If FastAPI throws a Pydantic Validation error, it returns an array instead of a string.
-        const defaultErrorMessage: string = "Authorization mutation sequence failed.";
+        const defaultErrorMessage: string = translateKey('warden_err_verify_default');
         let finalErrorMessage: string = defaultErrorMessage;
 
         if (parsedResponse.detail) {
@@ -455,23 +466,23 @@ export default function WardenDashboardScreen(): React.JSX.Element {
               finalErrorMessage = JSON.stringify(parsedResponse.detail);
             } catch (serializationException: unknown) {
               console.warn("[verifyHazardReport] Detail serialization failed.", serializationException);
-              finalErrorMessage = "Authorization failed. Error payload was unreadable mathematically.";
+              finalErrorMessage = translateKey('warden_err_verify_complex');
             }
           }
         }
         
-        Alert.alert("Verification Error", finalErrorMessage);
+        Alert.alert(translateKey('warden_err_verify_title'), finalErrorMessage);
       }
 
     } catch (error: unknown) {
       // Step 11: Catch fatal connection disruptions during the active mutation phase
-      let exceptionMessage: string = "Network connection dropped during secure verification protocol.";
+      let exceptionMessage: string = translateKey('warden_err_verify_conn');
       
       if (error instanceof Error) {
         exceptionMessage = `Mutation Exception Sequence: ${error.message}`;
       }
       
-      Alert.alert("Connection Error", exceptionMessage);
+      Alert.alert(translateKey('warden_err_conn_title'), exceptionMessage);
       console.error("[WardenDashboardScreen.verifyHazardReport] Fatal Mutation Error: ", error);
 
     } finally {
@@ -526,8 +537,8 @@ export default function WardenDashboardScreen(): React.JSX.Element {
       if (isNetworkSuccess) {
         // Step 6: Provide immediate operational feedback to the Warden visually
         Alert.alert(
-          "Hazard Purged Successfully", 
-          "The hazard has been permanently removed from the active map infrastructure."
+          translateKey('warden_succ_del_title'), 
+          translateKey('warden_succ_del_msg')
         );
         
         // Step 7: Seamlessly execute local memory purges without waiting for a full network reload
@@ -544,7 +555,7 @@ export default function WardenDashboardScreen(): React.JSX.Element {
 
       } else {
         // Step 8: Handle FastAPI rejection structures natively and securely
-        const defaultErrorMessage: string = "Deletion protocol sequence failed.";
+        const defaultErrorMessage: string = translateKey('warden_err_del_default');
         let finalErrorMessage: string = defaultErrorMessage;
 
         if (parsedResponse.detail) {
@@ -557,23 +568,23 @@ export default function WardenDashboardScreen(): React.JSX.Element {
               finalErrorMessage = JSON.stringify(parsedResponse.detail);
             } catch (serializationException: unknown) {
               console.warn("[removeResolvedHazard] Detail serialization failed.", serializationException);
-              finalErrorMessage = "Deletion failed. Error payload was mathematically unreadable.";
+              finalErrorMessage = translateKey('warden_err_del_complex');
             }
           }
         }
         
-        Alert.alert("Deletion Error", finalErrorMessage);
+        Alert.alert(translateKey('warden_err_del_title'), finalErrorMessage);
       }
 
     } catch (error: unknown) {
       // Step 9: Catch catastrophic local network failures
-      let exceptionMessage: string = "Network connection dropped during deletion execution.";
+      let exceptionMessage: string = translateKey('warden_err_del_conn');
       
       if (error instanceof Error) {
         exceptionMessage = `Deletion Exception: ${error.message}`;
       }
       
-      Alert.alert("Network Disturbance", exceptionMessage);
+      Alert.alert(translateKey('warden_err_net_disturb_title'), exceptionMessage);
       console.error("[WardenDashboardScreen.removeResolvedHazard] Fatal Deletion Error: ", error);
 
     } finally {
@@ -606,7 +617,7 @@ export default function WardenDashboardScreen(): React.JSX.Element {
     } catch (parseException: unknown) {
       // Guard condition: If the object contains circular references, prevent fatal parsing crash
       console.error("[extractSafeLocationString] CRITICAL ERROR: Spatial parsing rejected payload ->", parseException);
-      return "[Spatial Data Encryption Error]";
+      return translateKey('warden_err_spatial_enc');
     }
   };
 
@@ -630,7 +641,7 @@ export default function WardenDashboardScreen(): React.JSX.Element {
     
     // Ensure an empty description defaults to a safe fallback string inherently
     const rawDescription: string = item.description;
-    const reportDescription: string = rawDescription || "No additional context provided by the reporter on site.";
+    const reportDescription: string = rawDescription || translateKey('warden_card_no_context');
     
     // Execute the secure spatial stringifier
     const safeLocationString: string = extractSafeLocationString(item.location);
@@ -644,9 +655,9 @@ export default function WardenDashboardScreen(): React.JSX.Element {
         
         <View style={styles.cardHeader}>
           <View style={styles.badgeWarning}>
-            <Text style={styles.badgeTextWarning}>PENDING REVIEW</Text>
+            <Text style={styles.badgeTextWarning}>{translateKey('warden_card_pending_badge')}</Text>
           </View>
-          <Text style={styles.reporterText}>Reporter ID: {item.reporter_id}</Text>
+          <Text style={styles.reporterText}>{translateKey('warden_card_reporter_prefix')}{item.reporter_id}</Text>
         </View>
 
         <Text style={styles.hazardTitle}>{formattedTitle}</Text>
@@ -656,7 +667,7 @@ export default function WardenDashboardScreen(): React.JSX.Element {
           <MaterialCommunityIcons name="map-marker-radius" size={16} color={COLORS.textMuted} />
           {/* Inject the mathematically sanitized spatial string directly into the React component */}
           <Text style={styles.locationText} numberOfLines={2}>
-            Spatial Data: {safeLocationString}
+            {translateKey('warden_card_spatial_prefix')}{safeLocationString}
           </Text>
         </View>
 
@@ -673,7 +684,7 @@ export default function WardenDashboardScreen(): React.JSX.Element {
             disabled={isAnyActionLocked}
           >
             <MaterialCommunityIcons name="shield-check" size={20} color={COLORS.surface} style={{ marginRight: 8 }} />
-            <Text style={styles.actionButtonText}>AUTHORIZE & PUSH</Text>
+            <Text style={styles.actionButtonText}>{translateKey('warden_btn_authorize')}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity 
@@ -691,7 +702,7 @@ export default function WardenDashboardScreen(): React.JSX.Element {
             ) : (
               <>
                 <MaterialCommunityIcons name="delete-forever" size={20} color={COLORS.surface} style={{ marginRight: 8 }} />
-                <Text style={styles.actionButtonText}>REJECT SPAM</Text>
+                <Text style={styles.actionButtonText}>{translateKey('warden_btn_reject')}</Text>
               </>
             )}
           </TouchableOpacity>
@@ -716,7 +727,7 @@ export default function WardenDashboardScreen(): React.JSX.Element {
     const formattedTitle: string = rawHazardType.replace('_', ' ').toUpperCase();
     
     const rawDescription: string = item.description;
-    const reportDescription: string = rawDescription || "No additional context provided securely.";
+    const reportDescription: string = rawDescription || translateKey('warden_card_active_no_context');
     
     // Extract spatial properties securely
     const safeLocationString: string = extractSafeLocationString(item.location);
@@ -727,9 +738,9 @@ export default function WardenDashboardScreen(): React.JSX.Element {
         
         <View style={styles.cardHeader}>
           <View style={styles.badgeSuccess}>
-            <Text style={styles.badgeTextSuccess}>LIVE ON MAP</Text>
+            <Text style={styles.badgeTextSuccess}>{translateKey('warden_card_live_badge')}</Text>
           </View>
-          <Text style={styles.reporterText}>Reporter ID: {item.reporter_id}</Text>
+          <Text style={styles.reporterText}>{translateKey('warden_card_reporter_prefix')}{item.reporter_id}</Text>
         </View>
 
         <Text style={styles.hazardTitle}>{formattedTitle}</Text>
@@ -738,7 +749,7 @@ export default function WardenDashboardScreen(): React.JSX.Element {
         <View style={styles.locationContainer}>
           <MaterialCommunityIcons name="crosshairs-gps" size={16} color={COLORS.textMuted} />
           <Text style={styles.locationText} numberOfLines={2}>
-            Spatial Target: {safeLocationString}
+            {translateKey('warden_card_active_spatial_prefix')}{safeLocationString}
           </Text>
         </View>
 
@@ -757,7 +768,7 @@ export default function WardenDashboardScreen(): React.JSX.Element {
           ) : (
             <>
               <MaterialCommunityIcons name="check-decagram" size={20} color={COLORS.surface} style={{ marginRight: 8 }} />
-              <Text style={styles.actionButtonText}>MARK AS RESOLVED & REMOVE</Text>
+              <Text style={styles.actionButtonText}>{translateKey('warden_btn_resolve')}</Text>
             </>
           )}
         </TouchableOpacity>
@@ -782,9 +793,9 @@ export default function WardenDashboardScreen(): React.JSX.Element {
           onPress={() => router.back()} 
           disabled={isVerifying || deletingHazardId !== null}
         >
-          <Text style={styles.backText}>← Return to Map Engine</Text>
+          <Text style={styles.backText}>{translateKey('warden_back_btn')}</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Warden Operations Command</Text>
+        <Text style={styles.headerTitle}>{translateKey('warden_header_title')}</Text>
       </View>
 
       {/* ------------------------------------------ */}
@@ -799,9 +810,9 @@ export default function WardenDashboardScreen(): React.JSX.Element {
         {/* ========================================================= */}
         <View style={styles.halfFlexSection}>
           <View style={styles.listHeader}>
-            <Text style={styles.listTitle}>Pending Verification Queue</Text>
+            <Text style={styles.listTitle}>{translateKey('warden_queue_title')}</Text>
             <View style={styles.countBadge}>
-              <Text style={styles.countText}>{pendingReports.length} Pending</Text>
+              <Text style={styles.countText}>{pendingReports.length} {translateKey('warden_pending_badge')}</Text>
             </View>
           </View>
 
@@ -813,8 +824,8 @@ export default function WardenDashboardScreen(): React.JSX.Element {
           ) : pendingReports.length === 0 ? (
             <View style={styles.emptyStateContainer}>
               <MaterialCommunityIcons name="shield-check-outline" size={54} color={COLORS.textMuted} />
-              <Text style={styles.emptyStateText}>Verification queue is secured.</Text>
-              <Text style={styles.emptyStateSubtext}>No anomalies await your authorization natively.</Text>
+              <Text style={styles.emptyStateText}>{translateKey('warden_queue_empty_title')}</Text>
+              <Text style={styles.emptyStateSubtext}>{translateKey('warden_queue_empty_sub')}</Text>
             </View>
           ) : (
             <FlatList
@@ -832,9 +843,9 @@ export default function WardenDashboardScreen(): React.JSX.Element {
         {/* ========================================================= */}
         <View style={[styles.halfFlexSection, styles.borderTopDivider]}>
           <View style={styles.listHeaderActive}>
-            <Text style={styles.listTitleActive}>Live Map Hazards</Text>
+            <Text style={styles.listTitleActive}>{translateKey('warden_active_title')}</Text>
             <View style={styles.countBadgeActive}>
-              <Text style={styles.countTextActive}>{activeReports.length} Active</Text>
+              <Text style={styles.countTextActive}>{activeReports.length} {translateKey('warden_active_badge')}</Text>
             </View>
           </View>
 
@@ -843,8 +854,8 @@ export default function WardenDashboardScreen(): React.JSX.Element {
           ) : activeReports.length === 0 ? (
             <View style={styles.emptyStateContainer}>
               <MaterialCommunityIcons name="map-marker-off" size={54} color={COLORS.textMuted} />
-              <Text style={styles.emptyStateText}>The operational map is clear.</Text>
-              <Text style={styles.emptyStateSubtext}>Zero uncontained anomalies detected in your zone.</Text>
+              <Text style={styles.emptyStateText}>{translateKey('warden_active_empty_title')}</Text>
+              <Text style={styles.emptyStateSubtext}>{translateKey('warden_active_empty_sub')}</Text>
             </View>
           ) : (
             <FlatList

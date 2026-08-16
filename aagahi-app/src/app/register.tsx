@@ -16,6 +16,8 @@
  *   strict TypeScript static typing across all variables and parsed responses.
  * - EXTREME VERBOSITY: Applied mathematical unpacking, explicit type annotations, 
  *   and extensive JSDoc commentary across the entire file structure.
+ * - LOCALIZATION: Injected global `useLanguage` engine to seamlessly swap UI strings
+ *   between English and Urdu dynamically based on persistent application state.
  * ============================================================================
  */
 
@@ -37,6 +39,9 @@ import { router } from 'expo-router';
 // Centralized network configuration import. Ensures the app dynamically routes
 // to the live Render backend instead of timing out on local IPv4 addresses.
 import { API_BASE_URL } from '../config/api';
+
+// INJECTED: Localization Context Hook
+import { useLanguage } from '../context/LanguageContext';
 
 // ==========================================
 // SYSTEM CONFIGURATION & TYPE DEFINITIONS
@@ -124,6 +129,10 @@ const REGISTER_API_URL: string = `${API_BASE_URL}/api/auth/register`;
  */
 export default function RegisterScreen(): React.JSX.Element {
   
+  // --- Localization Engine Extraction ---
+  const languageContext = useLanguage();
+  const translateKey: (key: any) => string = languageContext.t;
+
   // --- Explicitly Typed Core State Management ---
   // Each input field requires its own isolated state tracker to prevent cross-contamination.
   const [email, setEmail] = useState<string>('');
@@ -186,8 +195,8 @@ export default function RegisterScreen(): React.JSX.Element {
       const isContactEmpty: boolean = sanitizedContact.length === 0;
 
       if (isEmailEmpty || isPasswordEmpty || isUsernameEmpty || isContactEmpty) {
-        const validationTitle: string = "Validation Error";
-        const validationMessage: string = "All core fields are mandatory. Please complete your profile parameters before submitting.";
+        const validationTitle: string = translateKey('reg_err_val_title');
+        const validationMessage: string = translateKey('reg_err_val_msg');
         Alert.alert(validationTitle, validationMessage);
         return;
       }
@@ -198,8 +207,8 @@ export default function RegisterScreen(): React.JSX.Element {
         const isShopCategoryEmpty: boolean = sanitizedShopCategory.length === 0;
         
         if (isShopNameEmpty || isShopCategoryEmpty) {
-            const shopValidationTitle: string = "Incomplete Shop Profile";
-            const shopValidationMessage: string = "Shop Name and Category are required to register a commercial property in the database.";
+            const shopValidationTitle: string = translateKey('reg_err_shop_title');
+            const shopValidationMessage: string = translateKey('reg_err_shop_msg');
             Alert.alert(shopValidationTitle, shopValidationMessage);
             return;
         }
@@ -264,11 +273,11 @@ export default function RegisterScreen(): React.JSX.Element {
         setShopCategory('');
         
         // Step 10: Provide success feedback and route the user back to the Identity Gatekeeper (Login)
-        const successTitle: string = "Registration Successful";
-        let successMessage: string = "Your identity profile has been verified and registered in the database.";
+        const successTitle: string = translateKey('reg_succ_title');
+        let successMessage: string = translateKey('reg_succ_msg_citizen');
         
         if (isShopkeeperRoleActive) {
-            successMessage = "Your commercial profile has been registered and a 0-Score compliance database row has been initialized.";
+            successMessage = translateKey('reg_succ_msg_shop');
         }
         
         Alert.alert(
@@ -276,7 +285,7 @@ export default function RegisterScreen(): React.JSX.Element {
           successMessage,
           [
             { 
-              text: "Proceed to Login", 
+              text: translateKey('reg_succ_btn'), 
               onPress: () => router.replace('/') 
             }
           ]
@@ -284,23 +293,23 @@ export default function RegisterScreen(): React.JSX.Element {
       } else {
         // Step 11: Server Rejection Handling
         // Extract the specific error detail provided by FastAPI's HTTPException (e.g., Duplicate Email).
-        const defaultErrorMessage: string = "Database insertion failed due to an unknown error.";
+        const defaultErrorMessage: string = translateKey('reg_err_fail_default');
         const serverErrorMessage: string = parsedResponse.detail || defaultErrorMessage;
         
-        const failureTitle: string = "Registration Failed";
+        const failureTitle: string = translateKey('reg_err_fail_title');
         Alert.alert(failureTitle, serverErrorMessage);
       }
 
     } catch (error: unknown) {
       // Step 12: Catch catastrophic network layer failures (e.g., server offline, Wi-Fi disconnected)
-      let errorMessage: string = "Failed to reach the secure gateway. Please check your network connection.";
+      let errorMessage: string = translateKey('reg_err_conn_msg');
       
       // Type-guard the unknown error object to safely extract the message property
       if (error instanceof Error) {
         errorMessage = `Network Error: ${error.message}`;
       }
       
-      const errorTitle: string = "Connection Error";
+      const errorTitle: string = translateKey('reg_err_conn_title');
       Alert.alert(errorTitle, errorMessage);
       console.error("[RegisterScreen.handleRegistration] Critical Network Failure: ", error);
 
@@ -316,10 +325,10 @@ export default function RegisterScreen(): React.JSX.Element {
    * Explicitly typed to handle the dynamic application of styles based on active memory state.
    * 
    * @param {SystemRole} roleValue - The internal database value of the role.
-   * @param {string} displayLabel - The human-readable label rendered in the UI.
+   * @param {string} translationKey - The dictionary key for the human-readable label rendered in the UI.
    * @returns {React.JSX.Element} The rendered TouchableOpacity tab button.
    */
-  const renderRoleTab = (roleValue: SystemRole, displayLabel: string): React.JSX.Element => {
+  const renderRoleTab = (roleValue: SystemRole, translationKey: string): React.JSX.Element => {
     // Evaluate if this specific tab matches the currently selected active state
     const isActive: boolean = activeRole === roleValue;
     
@@ -337,7 +346,7 @@ export default function RegisterScreen(): React.JSX.Element {
           styles.tabText, 
           isActive && styles.tabTextActive
         ]}>
-          {displayLabel}
+          {translateKey(translationKey)}
         </Text>
       </TouchableOpacity>
     );
@@ -362,15 +371,15 @@ export default function RegisterScreen(): React.JSX.Element {
           
           {/* --- Header Section --- */}
           <View style={styles.headerContainer}>
-            <Text style={styles.logoText}>JOIN AAGAHI</Text>
-            <Text style={styles.subtitleText}>Create your community identity</Text>
+            <Text style={styles.logoText}>{translateKey('reg_title')}</Text>
+            <Text style={styles.subtitleText}>{translateKey('reg_subtitle')}</Text>
           </View>
 
           {/* --- Designation Selection Tabs --- */}
           <View style={styles.tabContainer}>
-            {renderRoleTab('general', 'Citizen')}
-            {renderRoleTab('shopkeeper', 'Shop Owner')}
-            {renderRoleTab('warden', 'Warden')}
+            {renderRoleTab('general', 'role_citizen')}
+            {renderRoleTab('shopkeeper', 'role_shopkeeper')}
+            {renderRoleTab('warden', 'role_warden')}
           </View>
 
           {/* --- Form Parameters Card --- */}
@@ -378,10 +387,10 @@ export default function RegisterScreen(): React.JSX.Element {
             
             {/* Username Input Group */}
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Unique Username</Text>
+              <Text style={styles.inputLabel}>{translateKey('reg_user_label')}</Text>
               <TextInput 
                 style={styles.input}
-                placeholder="e.g. saddle_eagle99"
+                placeholder={translateKey('reg_user_placeholder')}
                 placeholderTextColor={COLORS.textMuted}
                 value={username}
                 onChangeText={setUsername}
@@ -392,10 +401,10 @@ export default function RegisterScreen(): React.JSX.Element {
 
             {/* Email Input Group */}
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Email Address</Text>
+              <Text style={styles.inputLabel}>{translateKey('reg_email_label')}</Text>
               <TextInput 
                 style={styles.input}
-                placeholder="Enter valid email"
+                placeholder={translateKey('reg_email_placeholder')}
                 placeholderTextColor={COLORS.textMuted}
                 value={email}
                 onChangeText={setEmail}
@@ -407,10 +416,10 @@ export default function RegisterScreen(): React.JSX.Element {
 
             {/* Contact Number Input Group */}
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Contact Number</Text>
+              <Text style={styles.inputLabel}>{translateKey('reg_contact_label')}</Text>
               <TextInput 
                 style={styles.input}
-                placeholder="+92 3XX XXXXXXX"
+                placeholder={translateKey('reg_contact_placeholder')}
                 placeholderTextColor={COLORS.textMuted}
                 value={contactNumber}
                 onChangeText={setContactNumber}
@@ -419,19 +428,17 @@ export default function RegisterScreen(): React.JSX.Element {
               />
             </View>
 
-            {/* ========================================== */}
-            {/* CONDITIONAL SHOPKEEPER EXTENSION BLOCK     */}
-            {/* ========================================== */}
+            {/* --- CONDITIONAL SHOPKEEPER EXTENSION BLOCK --- */}
             {shouldRenderShopkeeperInputs && (
                 <View style={styles.highlightedSection}>
-                    <Text style={styles.highlightedSectionTitle}>Storefront Details</Text>
+                    <Text style={styles.highlightedSectionTitle}>{translateKey('reg_store_title')}</Text>
                     
                     {/* Shop Name Input Group */}
                     <View style={styles.inputGroup}>
-                        <Text style={styles.inputLabel}>Shop Name</Text>
+                        <Text style={styles.inputLabel}>{translateKey('reg_shop_name_label')}</Text>
                         <TextInput 
                             style={styles.input}
-                            placeholder="e.g. Al-Madina General Store"
+                            placeholder={translateKey('reg_shop_name_placeholder')}
                             placeholderTextColor={COLORS.textMuted}
                             value={shopName}
                             onChangeText={setShopName}
@@ -442,10 +449,10 @@ export default function RegisterScreen(): React.JSX.Element {
 
                     {/* Shop Category Input Group */}
                     <View style={styles.inputGroup}>
-                        <Text style={styles.inputLabel}>Shop Category</Text>
+                        <Text style={styles.inputLabel}>{translateKey('reg_shop_cat_label')}</Text>
                         <TextInput 
                             style={styles.input}
-                            placeholder="e.g. Grocery, Electrical, Garments"
+                            placeholder={translateKey('reg_shop_cat_placeholder')}
                             placeholderTextColor={COLORS.textMuted}
                             value={shopCategory}
                             onChangeText={setShopCategory}
@@ -458,7 +465,7 @@ export default function RegisterScreen(): React.JSX.Element {
 
             {/* Password Input Group */}
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Secure Password</Text>
+              <Text style={styles.inputLabel}>{translateKey('reg_pass_label')}</Text>
               <TextInput 
                 style={styles.input}
                 placeholder="••••••••"
@@ -483,7 +490,7 @@ export default function RegisterScreen(): React.JSX.Element {
               {isLoading ? (
                 <ActivityIndicator color={COLORS.surface} size="small" />
               ) : (
-                <Text style={styles.registerButtonText}>REGISTER ACCOUNT</Text>
+                <Text style={styles.registerButtonText}>{translateKey('reg_btn')}</Text>
               )}
             </TouchableOpacity>
 
@@ -492,8 +499,9 @@ export default function RegisterScreen(): React.JSX.Element {
               style={styles.loginRedirect}
               onPress={() => router.replace('/')}
               disabled={isLoading}
+              activeOpacity={0.7}
             >
-              <Text style={styles.loginRedirectText}>Already have an account? Login</Text>
+              <Text style={styles.loginRedirectText}>{translateKey('reg_redirect')}</Text>
             </TouchableOpacity>
             
           </View>
@@ -596,7 +604,6 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, 
     borderColor: COLORS.border 
   },
-  // --- NEW STYLES: Highlights the conditionally rendered block ---
   highlightedSection: {
     backgroundColor: '#F8FAFC',
     padding: 16,

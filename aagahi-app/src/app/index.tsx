@@ -15,6 +15,9 @@
  *   from the backend login response into the global AuthContext memory.
  * - EXTREME VERBOSITY: Applied mathematical unpacking, explicit type annotations, 
  *   and robust try/catch blocks across the entire file structure.
+ * - LOCALIZATION: Injected global `useLanguage` engine to seamlessly swap UI strings
+ *   between English and Urdu dynamically based on persistent application state, with
+ *   strict null-checking to prevent rendering crashes.
  * ============================================================================
  */
 
@@ -35,6 +38,9 @@ import { router } from 'expo-router';
 
 // CRITICAL FIX: Importing the global authentication context pipeline
 import { useAuth } from '../context/AuthContext';
+
+// INJECTED: Localization Context Hook
+import { useLanguage } from '../context/LanguageContext';
 
 // CRITICAL FIX: Importing centralized network routing to prevent connection timeouts
 import { API_BASE_URL } from '../config/api';
@@ -125,6 +131,10 @@ export default function LoginScreen(): React.JSX.Element {
   
   // --- Global Identity Extraction (The Fix for Identity Amnesia) ---
   const { login } = useAuth();
+  
+  // --- Localization Engine Extraction ---
+  const languageContext = useLanguage();
+  const translateKey: (key: any) => string = languageContext.t;
 
   // --- Explicitly Typed State Management ---
   // Each parameter utilizes an isolated state hook to prevent unnecessary cross-component re-renders.
@@ -160,8 +170,8 @@ export default function LoginScreen(): React.JSX.Element {
       const isPasswordEmpty: boolean = rawPassword.length === 0;
 
       if (isEmailEmpty || isPasswordEmpty) {
-        const validationTitle: string = "Validation Error";
-        const validationMessage: string = "Please provide both your identification email and your passphrase.";
+        const validationTitle: string = translateKey('login_err_val_title');
+        const validationMessage: string = translateKey('login_err_val_msg');
         Alert.alert(validationTitle, validationMessage);
         return;
       }
@@ -210,9 +220,16 @@ export default function LoginScreen(): React.JSX.Element {
         const isRoleAuthorized: boolean = authenticatedRole === requestedRole;
 
         if (!isRoleAuthorized) {
-          const deniedTitle: string = "Access Denied";
-          const deniedMessage: string = `Your account credentials are valid, but you do not possess '${requestedRole.toUpperCase()}' privileges. Please select the correct role tab.`;
-          Alert.alert(deniedTitle, deniedMessage);
+          const deniedTitle: string = translateKey('login_err_denied_title');
+          const rawDeniedMessage: string = translateKey('login_err_denied_msg');
+          
+          // CRITICAL BUG FIX: Safely map 'general' to 'role_citizen' to prevent undefined toUpperCase() crashes
+          const roleDictKey = requestedRole === 'general' ? 'role_citizen' : `role_${requestedRole}`;
+          const localizedRequestedRole: string = translateKey(roleDictKey);
+          
+          const formattedDeniedMessage: string = rawDeniedMessage.replace('{role}', localizedRequestedRole.toUpperCase());
+          
+          Alert.alert(deniedTitle, formattedDeniedMessage);
           return;
         }
 
@@ -273,29 +290,32 @@ export default function LoginScreen(): React.JSX.Element {
             routeExceptionMsg = routeError.message;
           }
           console.error("[LoginScreen.handleAuthentication] Navigation injection failed: ", routeExceptionMsg);
-          Alert.alert("Routing Error", "Could not load the universal dashboard. Please restart the application.");
+          
+          const errorTitle: string = translateKey('login_err_route_title');
+          const errorMsg: string = translateKey('login_err_route_msg');
+          Alert.alert(errorTitle, errorMsg);
         }
 
       } else {
         // Step 13: Server Rejection Handling
         // Extract the specific error detail provided by FastAPI's HTTPException.
-        const defaultErrorMessage: string = "Invalid credentials provided.";
+        const defaultErrorMessage: string = translateKey('login_err_fail_default');
         const serverErrorMessage: string = parsedResponse.detail || defaultErrorMessage;
         
-        const failureTitle: string = "Authentication Failed";
+        const failureTitle: string = translateKey('login_err_fail_title');
         Alert.alert(failureTitle, serverErrorMessage);
       }
 
     } catch (error: unknown) {
       // Step 14: Catch catastrophic network failures (e.g., server offline, CORS block, Wi-Fi drop)
-      let errorMessage: string = "Failed to reach the secure authentication server. Please check your network connection.";
+      let errorMessage: string = translateKey('login_err_conn_msg');
       
       // Type-guard the unknown error object to safely extract specific operational messages.
       if (error instanceof Error) {
         errorMessage = `Network Error: ${error.message}`;
       }
       
-      const errorTitle: string = "Connection Error";
+      const errorTitle: string = translateKey('login_err_conn_title');
       Alert.alert(errorTitle, errorMessage);
       console.error("[LoginScreen.handleAuthentication] Critical Network Failure: ", error);
 
@@ -325,10 +345,10 @@ export default function LoginScreen(): React.JSX.Element {
    * Explicitly typed to handle the dynamic application of styles based on active memory state.
    * 
    * @param {SystemRole} roleValue - The internal database value of the role.
-   * @param {string} displayLabel - The human-readable label rendered to the UI.
+   * @param {string} translationKey - The dictionary key for the human-readable localized label.
    * @returns {React.JSX.Element} The rendered TouchableOpacity tab button.
    */
-  const renderRoleTab = (roleValue: SystemRole, displayLabel: string): React.JSX.Element => {
+  const renderRoleTab = (roleValue: SystemRole, translationKey: string): React.JSX.Element => {
     // Evaluate if this specific tab matches the currently selected state.
     const isActive: boolean = activeRole === roleValue;
     
@@ -357,7 +377,7 @@ export default function LoginScreen(): React.JSX.Element {
           styles.tabText,
           isActive && styles.tabTextActive
         ]}>
-          {displayLabel}
+          {translateKey(translationKey)}
         </Text>
       </TouchableOpacity>
     );
@@ -366,6 +386,10 @@ export default function LoginScreen(): React.JSX.Element {
   // ==========================================
   // COMPONENT RENDER TREE
   // ==========================================
+  
+  // Map the activeRole string to the correct localization dictionary key mathematically
+  const activeRoleLocalizationKey: string = activeRole === 'general' ? 'role_citizen' : `role_${activeRole}`;
+
   return (
     <SafeAreaView style={styles.safeArea}>
       {/* Layout constraint for web/desktop viewing to prevent catastrophic UI stretching */}
@@ -381,17 +405,17 @@ export default function LoginScreen(): React.JSX.Element {
           {/* --- Header Section --- */}
           <View style={styles.headerContainer}>
             <View style={styles.badge}>
-              <Text style={styles.badgeText}>SECURE PORTAL</Text>
+              <Text style={styles.badgeText}>{translateKey('login_badge')}</Text>
             </View>
             <Text style={styles.logoText}>AAGAHI</Text>
-            <Text style={styles.subtitleText}>Emergency Routing & Assessment</Text>
+            <Text style={styles.subtitleText}>{translateKey('login_subtitle')}</Text>
           </View>
 
           {/* --- Multi-Role Tab Selection Section --- */}
           <View style={styles.tabContainer}>
-            {renderRoleTab('general', 'Citizen')}
-            {renderRoleTab('shopkeeper', 'Shop Owner')}
-            {renderRoleTab('warden', 'Warden')}
+            {renderRoleTab('general', 'role_citizen')}
+            {renderRoleTab('shopkeeper', 'role_shopkeeper')}
+            {renderRoleTab('warden', 'role_warden')}
           </View>
 
           {/* --- Authentication Form Card --- */}
@@ -399,15 +423,18 @@ export default function LoginScreen(): React.JSX.Element {
             
             {/* Dynamic Context Header based on Active Role */}
             <Text style={styles.formContextText}>
-              Authenticating as: <Text style={styles.formContextHighlight}>{activeRole.toUpperCase()}</Text>
+              {translateKey('login_context_prefix')}
+              <Text style={styles.formContextHighlight}>
+                {translateKey(activeRoleLocalizationKey).toUpperCase()}
+              </Text>
             </Text>
             
             {/* Email Input Group */}
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Registered Email</Text>
+              <Text style={styles.inputLabel}>{translateKey('login_email_label')}</Text>
               <TextInput 
                 style={styles.input}
-                placeholder="Enter email address"
+                placeholder={translateKey('login_email_placeholder')}
                 placeholderTextColor={COLORS.textMuted}
                 value={email}
                 onChangeText={setEmail}
@@ -419,7 +446,7 @@ export default function LoginScreen(): React.JSX.Element {
 
             {/* Password Input Group */}
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Password</Text>
+              <Text style={styles.inputLabel}>{translateKey('login_pass_label')}</Text>
               <TextInput 
                 style={styles.input}
                 placeholder="••••••••"
@@ -445,7 +472,7 @@ export default function LoginScreen(): React.JSX.Element {
                 // Display spinning loading indicator during active network transmission stream
                 <ActivityIndicator color={COLORS.surface} size="small" />
               ) : (
-                <Text style={styles.loginButtonText}>LOGIN</Text>
+                <Text style={styles.loginButtonText}>{translateKey('login_btn')}</Text>
               )}
             </TouchableOpacity>
 
@@ -456,14 +483,14 @@ export default function LoginScreen(): React.JSX.Element {
               disabled={isLoading}
               activeOpacity={0.7}
             >
-              <Text style={styles.registerRedirectText}>Don't have an identity profile? Register</Text>
+              <Text style={styles.registerRedirectText}>{translateKey('login_redirect')}</Text>
             </TouchableOpacity>
             
           </View>
 
           {/* --- Footer Section --- */}
           <View style={styles.footer}>
-            <Text style={styles.footerText}>Authorized Personnel Only</Text>
+            <Text style={styles.footerText}>{translateKey('login_footer')}</Text>
           </View>
           
         </ScrollView>

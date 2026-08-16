@@ -1,3 +1,26 @@
+/**
+ * ============================================================================
+ * @file report.tsx
+ * @title Field Incident Reporter (Localization Integrated)
+ * @author Aagahi Core Engineering Division
+ * 
+ * @description
+ * Empowers authenticated users to categorize anomalies, provide textual descriptions, 
+ * and push dynamic multi-coordinate data directly to the PostGIS database.
+ * Now features live Emoji Marker updates based on user selection and full 
+ * bilingual localization support (English/Urdu).
+ * 
+ * @upgrades_applied
+ * - LOCALIZATION ENGINE: Injected `useLanguage` hook. Mapped all static text, 
+ *   including alerts and category buttons, to the translation dictionaries.
+ * - STATE INTEGRITY: Preserved the hardcoded English variables (`HAZARD_CATEGORIES`)
+ *   for backend transmission while seamlessly showing Urdu to the user via a 
+ *   secure frontend translation mapper.
+ * - EXPLICIT EXPANSION: Unpacked React hooks, added strict intermediate typings, 
+ *   and expanded architectural documentation.
+ * ============================================================================
+ */
+
 import React, { useState, useEffect } from 'react';
 import { 
   StyleSheet, 
@@ -20,6 +43,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 
 // IDENTITY & NETWORK: Centralized context modules ensuring state integrity
 import { useAuth, UserSession } from '../context/AuthContext';
+import { useLanguage } from '../context/LanguageContext'; // INJECTED: Localization Context
 import { API_BASE_URL } from '../config/api';
 
 // ==========================================
@@ -100,6 +124,8 @@ const API_REPORT_URL: string = `${API_BASE_URL}/api/hazards/report`;
 
 /**
  * Pre-defined, immutable list of standardized hazard categories for the community reporting tool.
+ * CRITICAL: These strictly remain in English to ensure the backend constraints do not break.
+ * Visual translations are handled dynamically at the rendering layer.
  */
 const HAZARD_CATEGORIES: string[] = [
   'Road Blockage',
@@ -177,9 +203,15 @@ const getCategoryEmoji = (categoryName: string): string => {
  */
 export default function ReportScreen(): React.JSX.Element {
   
-  // --- Global Identity Extraction ---
+  // --- Global Context Extraction (Unpacked for safety) ---
+  
   // Accesses the global memory pipeline to attach the correct user ID to the database row
-  const { user } = useAuth();
+  const authContext = useAuth();
+  const user: UserSession | null = authContext.user;
+
+  // Accesses the localization dictionary for dynamic Urdu/English rendering
+  const languageContext = useLanguage();
+  const translateKey: (key: any) => string = languageContext.t;
 
   // --- Explicitly Typed State Management ---
   
@@ -208,11 +240,11 @@ export default function ReportScreen(): React.JSX.Element {
 
   // Extract primitive string values BEFORE passing them to useEffect dependencies.
   // This explicitly guarantees React does not enter a "Maximum update depth exceeded" infinite loop.
-  const routeLatA = String(routeParameters.lat || '');
-  const routeLngA = String(routeParameters.lng || '');
-  const routeLatB = String(routeParameters.latB || '');
-  const routeLngB = String(routeParameters.lngB || '');
-  const routeMode = String(routeParameters.mode || '');
+  const routeLatA: string = String(routeParameters.lat || '');
+  const routeLngA: string = String(routeParameters.lng || '');
+  const routeLatB: string = String(routeParameters.latB || '');
+  const routeLngB: string = String(routeParameters.lngB || '');
+  const routeMode: string = String(routeParameters.mode || '');
 
   /**
    * React lifecycle effect to automatically parse, validate, and set incoming coordinates 
@@ -338,7 +370,7 @@ export default function ReportScreen(): React.JSX.Element {
       // Step 1: Pre-flight validation
       const isCategoryEmpty: boolean = selectedCategory.trim() === '';
       if (isCategoryEmpty) {
-        Alert.alert("Validation Error", "Please structurally select a hazard category before submission.");
+        Alert.alert(translateKey('report_alert_val_title'), translateKey('report_alert_val_msg'));
         return;
       }
 
@@ -400,9 +432,9 @@ export default function ReportScreen(): React.JSX.Element {
       if (isNetworkSuccess) {
         // Step 8: Transaction Success
         Alert.alert(
-          "Report Submitted", 
-          "Your coordinates have been securely committed to the spatial database.",
-          [{ text: "Acknowledge", onPress: () => router.replace('/dashboard') }]
+          translateKey('report_alert_succ_title'), 
+          translateKey('report_alert_succ_msg'),
+          [{ text: translateKey('report_alert_ack'), onPress: () => router.replace('/dashboard') }]
         );
       } else {
         // Step 9: Transaction Failure (Constraint Drop Warning)
@@ -411,14 +443,14 @@ export default function ReportScreen(): React.JSX.Element {
         console.error(`[API Rejected Payload] Expected DB Constraint value: '${formattedHazardType}'`);
         
         Alert.alert(
-          "Database Constraint Error", 
+          translateKey('report_alert_db_err'), 
           `${serverErrorMessage}\n\n[Dev Note: If this fails for Water/Electrical but works for Fire, run ALTER TABLE hazards DROP CONSTRAINT hazards_hazard_type_check; in Supabase.]`
         );
       }
 
     } catch (error: unknown) {
       // Step 10: Connection Failure
-      let exceptionMessage: string = "Network connection to the server dropped unexpectedly.";
+      let exceptionMessage: string = translateKey('report_alert_conn_err');
       if (error instanceof Error) {
         exceptionMessage = `Network Exception: ${error.message}`;
       }
@@ -429,6 +461,24 @@ export default function ReportScreen(): React.JSX.Element {
     } finally {
       // Step 11: Release Lock
       setIsSubmitting(false);
+    }
+  };
+
+  /**
+   * Translates the hardcoded backend category mapping to the current active UI language.
+   * Enables the frontend to show Urdu while the backend strictly receives English logic.
+   * 
+   * @param {string} categoryKey - The hardcoded English state variable.
+   * @returns {string} The localized translation string.
+   */
+  const getLocalizedCategoryName = (categoryKey: string): string => {
+    switch (categoryKey) {
+      case 'Road Blockage': return translateKey('report_cat_road');
+      case 'Fire Hazard': return translateKey('report_cat_fire');
+      case 'Structural Damage': return translateKey('report_cat_struct');
+      case 'Water Leak': return translateKey('report_cat_water');
+      case 'Electrical Fault': return translateKey('report_cat_elec');
+      default: return categoryKey;
     }
   };
 
@@ -446,9 +496,9 @@ export default function ReportScreen(): React.JSX.Element {
       {/* --- HEADER SECTION --- */}
       <View style={styles.header}>
         <TouchableOpacity activeOpacity={0.8} onPress={() => router.back()} disabled={isSubmitting}>
-          <Text style={styles.backText}>← Back to Dashboard</Text>
+          <Text style={styles.backText}>{translateKey('report_back_btn')}</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Report Anomaly</Text>
+        <Text style={styles.headerTitle}>{translateKey('report_header_title')}</Text>
       </View>
 
       {/* --- HARDWARE KEYBOARD WRAPPER --- */}
@@ -460,13 +510,13 @@ export default function ReportScreen(): React.JSX.Element {
           
           {/* --- SPATIAL MAP RENDERER --- */}
           <View style={styles.mapContainer}>
-            <Text style={styles.sectionTitle}>1. Confirm Coordinates</Text>
-            <Text style={styles.instructionText}>Review your spatial data visually before final transmission.</Text>
+            <Text style={styles.sectionTitle}>{translateKey('report_step1_title')}</Text>
+            <Text style={styles.instructionText}>{translateKey('report_step1_desc')}</Text>
             
             <View style={styles.mapWrapper}>
               {Platform.OS === 'web' ? (
                 <View style={styles.webMapFallback}>
-                  <Text style={styles.webMapText}>Map rendering requires a physical mobile device.</Text>
+                  <Text style={styles.webMapText}>{translateKey('report_map_fallback')}</Text>
                 </View>
               ) : (
                 <MapView
@@ -479,7 +529,7 @@ export default function ReportScreen(): React.JSX.Element {
                   {/* Primary Data Point: Dynamically renders the selected emoji icon */}
                   <Marker 
                     coordinate={selectedLocation} 
-                    title="Primary Epicenter"
+                    title={translateKey('report_primary_marker')}
                     tracksViewChanges={false} // Fixes Android disappearing marker bug
                   >
                     <View style={styles.emojiMarkerContainer}>
@@ -491,7 +541,7 @@ export default function ReportScreen(): React.JSX.Element {
                   {reportingMode === 'dual' && secondaryLocation && (
                     <Marker 
                       coordinate={secondaryLocation} 
-                      title="Secondary Point"
+                      title={translateKey('report_secondary_marker')}
                       tracksViewChanges={false}
                     >
                       <View style={styles.emojiMarkerContainer}>
@@ -517,7 +567,7 @@ export default function ReportScreen(): React.JSX.Element {
           {/* --- DATA COLLECTION LAYER --- */}
           <View style={styles.formContainer}>
             
-            <Text style={styles.sectionTitle}>2. Categorize Hazard</Text>
+            <Text style={styles.sectionTitle}>{translateKey('report_step2_title')}</Text>
             <View style={styles.categoryGrid}>
               
               {HAZARD_CATEGORIES.map((category: string, index: number) => {
@@ -545,7 +595,7 @@ export default function ReportScreen(): React.JSX.Element {
                       isSelected && styles.categoryPillTextSelected,
                       isLockedOut && { color: COLORS.textMuted }
                     ]}>
-                      {category}
+                      {getLocalizedCategoryName(category)}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -553,10 +603,10 @@ export default function ReportScreen(): React.JSX.Element {
               
             </View>
 
-            <Text style={styles.sectionTitle}>3. Additional Context (Optional)</Text>
+            <Text style={styles.sectionTitle}>{translateKey('report_step3_title')}</Text>
             <TextInput
               style={styles.textArea}
-              placeholder="Describe the severity, scope, or specific physical details of the incident..."
+              placeholder={translateKey('report_placeholder_desc')}
               placeholderTextColor={COLORS.textMuted}
               value={description}
               onChangeText={setDescription}
@@ -581,7 +631,7 @@ export default function ReportScreen(): React.JSX.Element {
               ) : (
                 <>
                   <MaterialCommunityIcons name="cloud-upload" size={20} color={COLORS.surface} style={{ marginRight: 8 }} />
-                  <Text style={styles.submitButtonText}>TRANSMIT REPORT</Text>
+                  <Text style={styles.submitButtonText}>{translateKey('report_submit_btn')}</Text>
                 </>
               )}
             </TouchableOpacity>

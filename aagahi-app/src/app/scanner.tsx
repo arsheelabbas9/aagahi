@@ -28,6 +28,8 @@
  *   on smaller devices (like iPhone Mini/SE) regardless of grid overflow.
  * - EXTREME VERBOSITY: Every React hook, state mutation, and functional block 
  *   has been explicitly unpacked and heavily typed.
+ * - LOCALIZATION INTEGRATED: Safely mapped all static strings, wizard arrays, and 
+ *   action rules to the `useLanguage` translation dictionary.
  * ============================================================================
  */
 
@@ -70,8 +72,9 @@ import * as ImageManipulator from 'expo-image-manipulator';
 // `npx expo install expo-image-picker` to be run before building.
 import * as ImagePicker from 'expo-image-picker';
 
-// Centralized Network Configuration
+// Centralized Network Configuration & Localization Engine
 import { API_BASE_URL } from '../config/api';
+import { useLanguage } from '../context/LanguageContext';
 
 // ==========================================
 // SYSTEM CONFIGURATION & TYPE DEFINITIONS
@@ -158,40 +161,41 @@ const COLORS: ThemeColors = {
 /**
  * @interface CaptureStepConfig
  * @description Describes a single "angle" the capture wizard will guide the user through.
+ * Hardcoded strings replaced with dynamic dictionary keys for bilingual mapping.
  */
 interface CaptureStepConfig {
   id: string;
-  angleLabel: string;
-  instructionTitle: string;
-  instructionSubtitle: string;
+  angleLabelKey: string;
+  instructionTitleKey: string;
+  instructionSubtitleKey: string;
   isRequired: boolean;
 }
 
 /**
  * @constant CAPTURE_STEPS
  * @description The strictly ordered array of visual angles required to perform a 
- * mathematically sound spatial hazard evaluation.
+ * mathematically sound spatial hazard evaluation. 
  */
 const CAPTURE_STEPS: CaptureStepConfig[] = [
   {
     id: 'overview',
-    angleLabel: 'Room Overview',
-    instructionTitle: 'Capture the Full Room',
-    instructionSubtitle: 'Stand near the entrance and fit as much of the room into frame as possible.',
+    angleLabelKey: 'scanner_step_overview_angle',
+    instructionTitleKey: 'scanner_step_overview_title',
+    instructionSubtitleKey: 'scanner_step_overview_sub',
     isRequired: true,
   },
   {
     id: 'electrical',
-    angleLabel: 'Electrical & Wiring',
-    instructionTitle: 'Get Close to Wiring & Panels',
-    instructionSubtitle: 'Point the camera at switchboards, exposed wiring, or the electrical meter.',
+    angleLabelKey: 'scanner_step_electrical_angle',
+    instructionTitleKey: 'scanner_step_electrical_title',
+    instructionSubtitleKey: 'scanner_step_electrical_sub',
     isRequired: true,
   },
   {
     id: 'exit_path',
-    angleLabel: 'Exit & Pathway',
-    instructionTitle: 'Capture the Primary Exit Route',
-    instructionSubtitle: 'Show the main doorway and whether it is blocked by stock or furniture.',
+    angleLabelKey: 'scanner_step_exit_angle',
+    instructionTitleKey: 'scanner_step_exit_title',
+    instructionSubtitleKey: 'scanner_step_exit_sub',
     isRequired: true,
   },
 ];
@@ -229,9 +233,9 @@ interface CapturedRoomImage {
 interface FixSuggestionRule {
   id: string;
   matchKeywords: string[];
-  title: string;
-  description: string;
-  actionLabel: string;
+  titleKey: string;
+  descriptionKey: string;
+  actionLabelKey: string;
   externalUrl: string;
 }
 
@@ -250,9 +254,9 @@ const FIX_SUGGESTION_RULES: FixSuggestionRule[] = [
       'wire', 'wiring', 'electric', 'cable', 'circuit', 'switchboard',
       'panel', 'short circuit', 'sparking', 'exposed wire',
     ],
-    title: 'Electrical Hazard',
-    description: 'Exposed or damaged wiring should be inspected and repaired by a licensed electrician before it becomes a fire risk.',
-    actionLabel: 'Hire an Electrician',
+    titleKey: 'scanner_fix_elec_title',
+    descriptionKey: 'scanner_fix_elec_desc',
+    actionLabelKey: 'scanner_fix_elec_action',
     externalUrl: 'https://www.olx.com.pk/items/q-electrician-karachi',
   },
   {
@@ -260,9 +264,9 @@ const FIX_SUGGESTION_RULES: FixSuggestionRule[] = [
     matchKeywords: [
       'extinguisher', 'fire safety equipment', 'no extinguisher', 'missing extinguisher',
     ],
-    title: 'Missing or Inaccessible Fire Extinguisher',
-    description: 'Every commercial space should have a working, reachable fire extinguisher — this is one of the fastest fixes on this list.',
-    actionLabel: 'Buy a Fire Extinguisher',
+    titleKey: 'scanner_fix_ext_title',
+    descriptionKey: 'scanner_fix_ext_desc',
+    actionLabelKey: 'scanner_fix_ext_action',
     externalUrl: 'https://www.olx.com.pk/items/q-fire-extinguisher',
   },
   {
@@ -270,9 +274,9 @@ const FIX_SUGGESTION_RULES: FixSuggestionRule[] = [
     matchKeywords: [
       'blocked exit', 'obstructed', 'blocked doorway', 'exit route', 'egress', 'obstruction', 'blocked path',
     ],
-    title: 'Blocked Exit Route',
-    description: 'Clearing stock, furniture, or clutter from exit paths is critical so people can evacuate quickly in an emergency.',
-    actionLabel: 'Hire Help to Clear the Space',
+    titleKey: 'scanner_fix_block_title',
+    descriptionKey: 'scanner_fix_block_desc',
+    actionLabelKey: 'scanner_fix_block_action',
     externalUrl: 'https://www.olx.com.pk/items/q-labour-karachi',
   },
   {
@@ -280,9 +284,9 @@ const FIX_SUGGESTION_RULES: FixSuggestionRule[] = [
     matchKeywords: [
       'emergency light', 'no lighting', 'lighting is not', 'dark exit', 'bulb is not working',
     ],
-    title: 'Emergency Lighting Issue',
-    description: 'Functional emergency lighting helps people find the exit safely during a power outage or a fire.',
-    actionLabel: 'Buy Emergency Lighting',
+    titleKey: 'scanner_fix_light_title',
+    descriptionKey: 'scanner_fix_light_desc',
+    actionLabelKey: 'scanner_fix_light_action',
     externalUrl: 'https://www.olx.com.pk/items/q-emergency-light',
   },
 ];
@@ -294,9 +298,12 @@ const FIX_SUGGESTION_RULES: FixSuggestionRule[] = [
 export default function ScannerScreen(): React.JSX.Element {
 
   // ==========================================
-  // ROUTING & MODE EXTRACTION
+  // ROUTING, MODE & TRANSLATION EXTRACTION
   // ==========================================
   const routerParameters: Record<string, string | string[]> = useLocalSearchParams();
+  
+  const languageContextObject = useLanguage();
+  const translateKey: (key: any) => string = languageContextObject.t;
   
   const rawScanMode: string | string[] | undefined = routerParameters.mode;
   const scanMode: string = (typeof rawScanMode === 'string' ? rawScanMode : 'qr');
@@ -380,20 +387,20 @@ export default function ScannerScreen(): React.JSX.Element {
   if (!isPermissionGranted) {
     return (
       <SafeAreaView style={styles.centerContainer}>
-        <Text style={styles.text}>Hardware camera access is required to utilize the scanner module.</Text>
+        <Text style={styles.text}>{translateKey('scanner_cam_perm_req')}</Text>
         <TouchableOpacity
           style={styles.actionButton}
           activeOpacity={0.8}
           onPress={() => requestPermission()}
         >
-          <Text style={styles.actionButtonText}>Grant Permission</Text>
+          <Text style={styles.actionButtonText}>{translateKey('scanner_btn_grant')}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.actionButton, { backgroundColor: COLORS.textMuted, marginTop: 10 }]}
           activeOpacity={0.8}
           onPress={() => router.back()}
         >
-          <Text style={styles.actionButtonText}>Cancel</Text>
+          <Text style={styles.actionButtonText}>{translateKey('scanner_btn_cancel')}</Text>
         </TouchableOpacity>
       </SafeAreaView>
     );
@@ -418,8 +425,8 @@ export default function ScannerScreen(): React.JSX.Element {
       const capturedStepIds: string[] = capturedRoomImages.map((capture: CapturedRoomImage) => capture.stepId);
 
       let allRequirementsMet: boolean = true;
-      for (let i = 0; i < requiredStepIds.length; i++) {
-        const targetId: string = requiredStepIds[i];
+      for (let iterationIndex = 0; iterationIndex < requiredStepIds.length; iterationIndex++) {
+        const targetId: string = requiredStepIds[iterationIndex];
         const isIdPresent: boolean = capturedStepIds.includes(targetId);
         if (!isIdPresent) {
           allRequirementsMet = false;
@@ -490,7 +497,7 @@ export default function ScannerScreen(): React.JSX.Element {
 
       const newCapturePayload: CapturedRoomImage = {
         stepId: activeStep.id,
-        angleLabel: activeStep.angleLabel,
+        angleLabel: translateKey(activeStep.angleLabelKey),
         uri: normalizedImage.uri,
         base64: normalizedImage.base64 as string,
         capturedAt: Date.now(),
@@ -609,7 +616,7 @@ export default function ScannerScreen(): React.JSX.Element {
       // Step 5: Package and commit into the capture buffer — identical shape to a live capture.
       const newCapturePayload: CapturedRoomImage = {
         stepId: activeStep.id,
-        angleLabel: activeStep.angleLabel,
+        angleLabel: translateKey(activeStep.angleLabelKey),
         uri: normalizedImage.uri,
         base64: normalizedImage.base64 as string,
         capturedAt: Date.now(),
@@ -980,7 +987,7 @@ export default function ScannerScreen(): React.JSX.Element {
   // COMPONENT RENDER TREE (WITH STICKY FOOTER)
   // ==========================================
 
-  const headerTitleDisplayString: string = isAiMode ? "AI Room Safety Scanner" : "Facility QR Scanner";
+  const headerTitleDisplayString: string = isAiMode ? translateKey('scanner_header_ai') : translateKey('scanner_header_qr');
   const currentActiveCaptureStep: CaptureStepConfig | undefined = CAPTURE_STEPS[captureStepIndex];
   
   const hasActiveResult: boolean = scanResult !== null;
@@ -1000,7 +1007,7 @@ export default function ScannerScreen(): React.JSX.Element {
       {/* Header Viewport Block */}
       <View style={styles.header}>
         <TouchableOpacity activeOpacity={0.8} onPress={() => router.back()} disabled={loading}>
-          <Text style={styles.backText}>← Back to Dashboard</Text>
+          <Text style={styles.backText}>{translateKey('scanner_back_btn')}</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{headerTitleDisplayString}</Text>
       </View>
@@ -1039,11 +1046,11 @@ export default function ScannerScreen(): React.JSX.Element {
                 </View>
 
                 <Text style={styles.instructionTitle}>
-                  {currentActiveCaptureStep?.instructionTitle}
-                  {currentActiveCaptureStep && !currentActiveCaptureStep.isRequired ? '  (Optional)' : ''}
+                  {currentActiveCaptureStep ? translateKey(currentActiveCaptureStep.instructionTitleKey) : ''}
+                  {currentActiveCaptureStep && !currentActiveCaptureStep.isRequired ? translateKey('scanner_step_optional') : ''}
                 </Text>
                 <Text style={styles.instructionSubtitle}>
-                  {currentActiveCaptureStep?.instructionSubtitle}
+                  {currentActiveCaptureStep ? translateKey(currentActiveCaptureStep.instructionSubtitleKey) : ''}
                 </Text>
 
                 <TouchableOpacity
@@ -1054,8 +1061,8 @@ export default function ScannerScreen(): React.JSX.Element {
                 >
                   <Text style={styles.captureButtonText}>
                     {isCapturingFrame
-                      ? "Processing Frame..."
-                      : `Capture: ${currentActiveCaptureStep?.angleLabel ?? 'Angle'}`}
+                      ? translateKey('scanner_cap_processing')
+                      : `${translateKey('scanner_cap_prefix')}${currentActiveCaptureStep ? translateKey(currentActiveCaptureStep.angleLabelKey) : 'Angle'}`}
                   </Text>
                 </TouchableOpacity>
 
@@ -1068,7 +1075,7 @@ export default function ScannerScreen(): React.JSX.Element {
                   disabled={isCapturingFrame}
                 >
                   <Text style={styles.galleryButtonText}>
-                    {isCapturingFrame ? "Please wait..." : "Or Choose from Gallery"}
+                    {isCapturingFrame ? translateKey('scanner_gal_wait') : translateKey('scanner_gal_choose')}
                   </Text>
                 </TouchableOpacity>
 
@@ -1079,7 +1086,7 @@ export default function ScannerScreen(): React.JSX.Element {
                     onPress={() => setIsReviewingCaptures(true)}
                   >
                     <Text style={styles.finishReviewButtonText}>
-                      Finish & Review Photos ({capturedRoomImages.length})
+                      {translateKey('scanner_btn_review').replace('{count}', capturedRoomImages.length.toString())}
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -1095,9 +1102,9 @@ export default function ScannerScreen(): React.JSX.Element {
           <View style={styles.reviewContainerFlexWrap}>
             
             <ScrollView style={styles.reviewScroll} contentContainerStyle={styles.reviewScrollContent}>
-              <Text style={styles.reviewHeading}>Review Your Captures</Text>
+              <Text style={styles.reviewHeading}>{translateKey('scanner_rev_heading')}</Text>
               <Text style={styles.reviewSubheading}>
-                {capturedRoomImages.length} of {CAPTURE_STEPS.length} angles captured. Tap "Retake" to redo any photo before submitting.
+                {translateKey('scanner_rev_sub').replace('{count}', capturedRoomImages.length.toString()).replace('{total}', CAPTURE_STEPS.length.toString())}
               </Text>
 
               <View style={styles.reviewGrid}>
@@ -1112,17 +1119,17 @@ export default function ScannerScreen(): React.JSX.Element {
                         <Image source={{ uri: cachedCaptureData.uri }} style={styles.reviewThumbnail} />
                       ) : (
                         <View style={[styles.reviewThumbnail, styles.reviewThumbnailEmpty]}>
-                          <Text style={styles.addTileText}>Not Captured</Text>
+                          <Text style={styles.addTileText}>{translateKey('scanner_rev_empty')}</Text>
                         </View>
                       )}
                       
                       <Text style={styles.reviewTileLabel} numberOfLines={1}>
-                        {iteratedStep.angleLabel}
+                        {translateKey(iteratedStep.angleLabelKey)}
                       </Text>
                       
                       <TouchableOpacity onPress={() => handleEditCaptureStep(iteratedStep.id)} activeOpacity={0.8}>
                         <Text style={styles.retakeBadge}>
-                          {cachedCaptureData ? 'Retake' : 'Capture'}
+                          {cachedCaptureData ? translateKey('scanner_rev_retake') : translateKey('scanner_rev_capture')}
                         </Text>
                       </TouchableOpacity>
                     </View>
@@ -1144,7 +1151,7 @@ export default function ScannerScreen(): React.JSX.Element {
                 disabled={!getIsMinimumRequiredCaptured() || isAnalyzing}
               >
                 <Text style={styles.actionButtonText}>
-                  {isAnalyzing ? "Analyzing All Angles..." : "Submit for AI Analysis"}
+                  {isAnalyzing ? translateKey('scanner_submit_analyzing') : translateKey('scanner_submit_btn')}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -1162,12 +1169,16 @@ export default function ScannerScreen(): React.JSX.Element {
 
         {isQrMode && scanResult?.type === 'success' && scanResult.data && (
           <View style={styles.resultCard}>
-            <Text style={styles.resultLabel}>FACILITY VERIFIED</Text>
+            <Text style={styles.resultLabel}>{translateKey('scanner_res_verified')}</Text>
             <Text style={styles.shopName}>{scanResult.data.shop_name}</Text>
-            <Text style={styles.shopCategory}>Category: {scanResult.data.category}</Text>
+            <Text style={styles.shopCategory}>
+              {translateKey('scanner_res_cat').replace('{category}', scanResult.data.category)}
+            </Text>
 
             <View style={styles.scoreBadge}>
-              <Text style={styles.scoreText}>Safety Score: {scanResult.data.safety_score}/100</Text>
+              <Text style={styles.scoreText}>
+                {translateKey('scanner_res_score').replace('{score}', scanResult.data.safety_score.toString())}
+              </Text>
             </View>
 
             <TouchableOpacity
@@ -1175,7 +1186,7 @@ export default function ScannerScreen(): React.JSX.Element {
               activeOpacity={0.85}
               onPress={resetScannerState}
             >
-              <Text style={styles.actionButtonText}>Scan Another Facility QR</Text>
+              <Text style={styles.actionButtonText}>{translateKey('scanner_btn_scan_another')}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -1183,21 +1194,23 @@ export default function ScannerScreen(): React.JSX.Element {
         {isAiMode && scanResult?.type === 'success' && scanResult.aiData && (
           <ScrollView style={styles.aiResultScroll}>
             <View style={styles.resultCard}>
-              <Text style={styles.resultLabel}>AI VISION ANALYSIS COMPLETE</Text>
+              <Text style={styles.resultLabel}>{translateKey('scanner_ai_complete')}</Text>
 
               {typeof scanResult.aiData.images_analyzed === 'number' && (
                 <Text style={styles.shopCategory}>
-                  Based on {scanResult.aiData.images_analyzed} captured angle(s)
+                  {translateKey('scanner_ai_based_on').replace('{count}', scanResult.aiData.images_analyzed.toString())}
                 </Text>
               )}
 
               <View style={styles.scoreBadge}>
-                <Text style={styles.scoreText}>Safety Score: {scanResult.aiData.safety_score}/100</Text>
+                <Text style={styles.scoreText}>
+                  {translateKey('scanner_res_score').replace('{score}', scanResult.aiData.safety_score.toString())}
+                </Text>
               </View>
 
               {Array.isArray(scanResult.aiData.hazard_breakdown) && scanResult.aiData.hazard_breakdown.length > 0 ? (
                 <View style={{ width: '100%' }}>
-                  <Text style={styles.aiDetailHeader}>Identified Hazards:</Text>
+                  <Text style={styles.aiDetailHeader}>{translateKey('scanner_ai_hazards')}</Text>
                   {scanResult.aiData.hazard_breakdown.map((hazardNode: HazardDetail, hazardIndex: number) => {
                     const dotColorHex: string = getSeverityColor(hazardNode.severity);
                     
@@ -1210,7 +1223,9 @@ export default function ScannerScreen(): React.JSX.Element {
                           </Text>
                           <Text style={styles.aiDetailText}>{hazardNode.description}</Text>
                           {hazardNode.detected_in_angle && (
-                            <Text style={styles.hazardAngleText}>Seen in: {hazardNode.detected_in_angle}</Text>
+                            <Text style={styles.hazardAngleText}>
+                              {translateKey('scanner_ai_seen_in').replace('{angle}', hazardNode.detected_in_angle)}
+                            </Text>
                           )}
                         </View>
                       </View>
@@ -1219,26 +1234,26 @@ export default function ScannerScreen(): React.JSX.Element {
                 </View>
               ) : (
                 <View style={styles.aiDetailContainer}>
-                  <Text style={styles.aiDetailHeader}>Identified Hazards:</Text>
+                  <Text style={styles.aiDetailHeader}>{translateKey('scanner_ai_hazards')}</Text>
                   <Text style={styles.aiDetailText}>
-                    {scanResult.aiData.identified_hazards || 'No specific hazards were returned by the analysis engine.'}
+                    {scanResult.aiData.identified_hazards || translateKey('scanner_ai_no_hazards')}
                   </Text>
                 </View>
               )}
 
               <View style={styles.aiDetailContainer}>
-                <Text style={styles.aiDetailHeader}>Recommended Improvements:</Text>
+                <Text style={styles.aiDetailHeader}>{translateKey('scanner_ai_recs')}</Text>
                 <Text style={styles.aiDetailText}>
-                  {scanResult.aiData.improvement_steps || 'No specific improvement steps were returned by the analysis engine.'}
+                  {scanResult.aiData.improvement_steps || translateKey('scanner_ai_no_recs')}
                 </Text>
               </View>
 
               {/* ========================================== */}
-              {/* NEW JSX INTEGRATION: FIX SUGGESTION ACTION BUTTONS */}
+              {/* JSX INTEGRATION: FIX SUGGESTION ACTION BUTTONS */}
               {/* ========================================== */}
               {activeFixSuggestions.length > 0 && (
                 <View style={{ width: '100%', marginBottom: 16 }}>
-                  <Text style={[styles.aiDetailHeader, { marginBottom: 10 }]}>Take Immediate Action:</Text>
+                  <Text style={[styles.aiDetailHeader, { marginBottom: 10 }]}>{translateKey('scanner_ai_action')}</Text>
                   {activeFixSuggestions.map((suggestion: FixSuggestionRule) => (
                     <TouchableOpacity
                       key={suggestion.id}
@@ -1246,7 +1261,7 @@ export default function ScannerScreen(): React.JSX.Element {
                       activeOpacity={0.85}
                       onPress={() => handleOpenExternalFixLink(suggestion.externalUrl)}
                     >
-                      <Text style={styles.actionButtonText}>{suggestion.actionLabel}</Text>
+                      <Text style={styles.actionButtonText}>{translateKey(suggestion.actionLabelKey)}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -1257,7 +1272,7 @@ export default function ScannerScreen(): React.JSX.Element {
                 activeOpacity={0.85}
                 onPress={resetScannerState}
               >
-                <Text style={styles.actionButtonText}>Analyze Another Room</Text>
+                <Text style={styles.actionButtonText}>{translateKey('scanner_btn_analyze_another')}</Text>
               </TouchableOpacity>
             </View>
           </ScrollView>
@@ -1265,7 +1280,7 @@ export default function ScannerScreen(): React.JSX.Element {
 
         {scanResult?.type === 'error' && (
           <View style={styles.resultCard}>
-            <Text style={[styles.resultLabel, { color: COLORS.primary }]}>OPERATION FAILED</Text>
+            <Text style={[styles.resultLabel, { color: COLORS.primary }]}>{translateKey('scanner_err_failed')}</Text>
             <Text style={styles.errorText}>{scanResult.message}</Text>
 
             <TouchableOpacity
@@ -1273,7 +1288,7 @@ export default function ScannerScreen(): React.JSX.Element {
               activeOpacity={0.85}
               onPress={resetScannerState}
             >
-              <Text style={styles.actionButtonText}>Retry Scanner</Text>
+              <Text style={styles.actionButtonText}>{translateKey('scanner_btn_retry')}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -1363,7 +1378,6 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     letterSpacing: 0.5
   },
-  // --- NEW: Gallery import button styles ---
   galleryButton: {
     marginTop: 12,
     paddingVertical: 8,
@@ -1420,8 +1434,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textDecorationLine: 'underline',
   },
-  
-  // --- NEW: Sticky Footer Review Fix Styles ---
   reviewContainerFlexWrap: {
     flex: 1, 
     backgroundColor: COLORS.background 
@@ -1431,7 +1443,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
     borderTopWidth: 1,
     borderTopColor: '#E2E8F0',
-    paddingBottom: Platform.OS === 'ios' ? 40 : 20, // iOS Hardware chin adjustment
+    paddingBottom: Platform.OS === 'ios' ? 40 : 20, 
   },
   reviewScroll: {
     flex: 1,
@@ -1493,7 +1505,6 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     fontWeight: '600',
   },
-
   aiResultScroll: {
     maxHeight: 420,
   },

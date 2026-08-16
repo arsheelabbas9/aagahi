@@ -1,3 +1,20 @@
+/**
+ * ============================================================================
+ * @file routing.tsx
+ * @title Active Hazard Zone Evacuation Engine
+ * @description 
+ * Renders the active hazard epicenter, draws the geographic evacuation perimeter,
+ * and lists the specific commercial facilities trapped within the blast radius.
+ * 
+ * @upgrades_applied
+ * - LOCALIZATION: Fully integrated `useLanguage` to dynamically map static strings 
+ *   (titles, badges, dynamic distances, API fallback errors) to bilingual state.
+ * - MANDATORY EXPANSION: All explicit typings, nested blocks, and mapping
+ *   arrays mathematically unpacked for extreme code verbosity without altering
+ *   the baseline geographic logic.
+ * ============================================================================
+ */
+
 import React, { useState, useEffect } from 'react';
 import { 
   StyleSheet, 
@@ -11,6 +28,9 @@ import {
 } from 'react-native';
 import MapView, { Marker, Circle, Region } from 'react-native-maps';
 import { router } from 'expo-router';
+
+// LOCALIZATION ENGINE INJECTION
+import { useLanguage } from '../context/LanguageContext';
 
 // ==========================================
 // SYSTEM CONFIGURATION & TYPE DEFINITIONS
@@ -82,6 +102,9 @@ const COLORS: ThemeColors = {
  */
 export default function RoutingScreen(): React.JSX.Element {
   
+  const languageContext = useLanguage();
+  const translateKey: (key: any) => string = languageContext.t;
+
   // --- Explicitly Typed State Management ---
   const [affectedShops, setAffectedShops] = useState<AffectedShop[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -138,13 +161,14 @@ export default function RoutingScreen(): React.JSX.Element {
         setAffectedShops(parsedJson.data);
       } else {
         // Handle server-side logic rejections safely
-        const errorMessage: string = parsedJson.detail || 'Failed to retrieve spatial data.';
+        const defaultErrorMessage: string = translateKey('routing_err_fetch');
+        const errorMessage: string = parsedJson.detail || defaultErrorMessage;
         setError(errorMessage);
       }
       
     } catch (err: unknown) {
       // Step 7: Catch and log catastrophic network or CORS failures
-      let exceptionMessage: string = 'Network connection to the spatial engine failed.';
+      let exceptionMessage: string = translateKey('routing_err_conn');
       if (err instanceof Error) {
         exceptionMessage = `Network Exception: ${err.message}`;
       }
@@ -171,6 +195,13 @@ export default function RoutingScreen(): React.JSX.Element {
     const currentRank: number = index + 1;
     const roundedDistance: string = item.distance_meters.toFixed(1);
     
+    // Inject dynamic strings from localization dictionary
+    const rawDistanceString: string = translateKey('routing_card_distance');
+    const localizedDistanceString: string = rawDistanceString.replace('{distance}', roundedDistance);
+
+    const rawScoreString: string = translateKey('routing_card_score');
+    const localizedScoreString: string = rawScoreString.replace('{score}', item.safety_score.toString());
+    
     return (
       <View style={styles.shopCard}>
         <View style={styles.shopHeader}>
@@ -180,8 +211,8 @@ export default function RoutingScreen(): React.JSX.Element {
           <Text style={styles.shopName} numberOfLines={1}>{item.shop_name}</Text>
         </View>
         <View style={styles.shopDetails}>
-          <Text style={styles.detailText}>Distance: {roundedDistance}m</Text>
-          <Text style={styles.detailText}>Safety Score: {item.safety_score}/100</Text>
+          <Text style={styles.detailText}>{localizedDistanceString}</Text>
+          <Text style={styles.detailText}>{localizedScoreString}</Text>
         </View>
       </View>
     );
@@ -204,16 +235,16 @@ export default function RoutingScreen(): React.JSX.Element {
       {/* Header Section */}
       <View style={styles.header}>
         <TouchableOpacity activeOpacity={0.8} onPress={() => router.back()}>
-          <Text style={styles.backText}>← Back to Dashboard</Text>
+          <Text style={styles.backText}>{translateKey('routing_back_btn')}</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Active Hazard Zone</Text>
+        <Text style={styles.headerTitle}>{translateKey('routing_header_title')}</Text>
       </View>
 
       {/* Map Rendering Engine Section */}
       <View style={styles.mapContainer}>
         {Platform.OS === 'web' ? (
           <View style={styles.webMapFallback}>
-            <Text style={styles.webMapText}>Map rendering requires a physical mobile device.</Text>
+            <Text style={styles.webMapText}>{translateKey('routing_map_fallback')}</Text>
           </View>
         ) : (
           <MapView
@@ -221,7 +252,7 @@ export default function RoutingScreen(): React.JSX.Element {
             initialRegion={initialMapRegion}
           >
             {/* Hazard Epicenter Pin */}
-            <Marker coordinate={HAZARD_COORDS} title="Critical Hazard Epicenter" />
+            <Marker coordinate={HAZARD_COORDS} title={translateKey('routing_map_epicenter_title')} />
             
             {/* Evacuation Perimeter Overlay (1000m) */}
             <Circle
@@ -239,9 +270,9 @@ export default function RoutingScreen(): React.JSX.Element {
       <View style={styles.listContainer}>
         
         <View style={styles.listHeader}>
-          <Text style={styles.listTitle}>Evacuation Priority List</Text>
+          <Text style={styles.listTitle}>{translateKey('routing_list_title')}</Text>
           <View style={styles.countBadge}>
-            <Text style={styles.countText}>{affectedShops.length} Facilities</Text>
+            <Text style={styles.countText}>{affectedShops.length} {translateKey('routing_list_facilities')}</Text>
           </View>
         </View>
 
@@ -269,27 +300,133 @@ export default function RoutingScreen(): React.JSX.Element {
 // STYLESHEET REGISTRY
 // ==========================================
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: COLORS.background },
-  header: { padding: 20, backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border, zIndex: 10 },
-  backText: { color: COLORS.textMuted, fontSize: 14, marginBottom: 8, fontWeight: '600' },
-  headerTitle: { fontSize: 20, fontWeight: '700', color: COLORS.textDark },
-  mapContainer: { height: '40%', width: '100%', backgroundColor: '#E5E7EB' },
-  map: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
-  webMapFallback: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-  webMapText: { color: COLORS.textMuted, textAlign: 'center', fontWeight: '500' },
-  listContainer: { flex: 1, backgroundColor: COLORS.background },
-  listHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  listTitle: { fontSize: 16, fontWeight: '700', color: COLORS.textDark },
-  countBadge: { backgroundColor: '#FEE2E2', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
-  countText: { color: COLORS.primary, fontSize: 12, fontWeight: '700' },
-  flatListContent: { padding: 16 },
-  loader: { marginTop: 40 },
-  errorText: { textAlign: 'center', marginTop: 40, color: COLORS.primary, fontWeight: '500' },
-  shopCard: { backgroundColor: COLORS.surface, padding: 16, borderRadius: 12, marginBottom: 12, borderWidth: 1, borderColor: COLORS.border },
-  shopHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  rankBadge: { backgroundColor: COLORS.textDark, width: 28, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
-  rankText: { color: COLORS.surface, fontSize: 12, fontWeight: '700' },
-  shopName: { fontSize: 16, fontWeight: '600', color: COLORS.textDark, flex: 1 },
-  shopDetails: { flexDirection: 'row', justifyContent: 'space-between', paddingLeft: 40 },
-  detailText: { fontSize: 13, color: COLORS.textMuted, fontWeight: '500' },
+  safeArea: { 
+    flex: 1, 
+    backgroundColor: COLORS.background 
+  },
+  header: { 
+    padding: 20, 
+    backgroundColor: COLORS.surface, 
+    borderBottomWidth: 1, 
+    borderBottomColor: COLORS.border, 
+    zIndex: 10 
+  },
+  backText: { 
+    color: COLORS.textMuted, 
+    fontSize: 14, 
+    marginBottom: 8, 
+    fontWeight: '600' 
+  },
+  headerTitle: { 
+    fontSize: 20, 
+    fontWeight: '700', 
+    color: COLORS.textDark 
+  },
+  mapContainer: { 
+    height: '40%', 
+    width: '100%', 
+    backgroundColor: '#E5E7EB' 
+  },
+  map: { 
+    position: 'absolute', 
+    top: 0, 
+    left: 0, 
+    right: 0, 
+    bottom: 0 
+  },
+  webMapFallback: { 
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    padding: 20 
+  },
+  webMapText: { 
+    color: COLORS.textMuted, 
+    textAlign: 'center', 
+    fontWeight: '500' 
+  },
+  listContainer: { 
+    flex: 1, 
+    backgroundColor: COLORS.background 
+  },
+  listHeader: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    padding: 20, 
+    backgroundColor: COLORS.surface, 
+    borderBottomWidth: 1, 
+    borderBottomColor: COLORS.border 
+  },
+  listTitle: { 
+    fontSize: 16, 
+    fontWeight: '700', 
+    color: COLORS.textDark 
+  },
+  countBadge: { 
+    backgroundColor: '#FEE2E2', 
+    paddingHorizontal: 10, 
+    paddingVertical: 4, 
+    borderRadius: 12 
+  },
+  countText: { 
+    color: COLORS.primary, 
+    fontSize: 12, 
+    fontWeight: '700' 
+  },
+  flatListContent: { 
+    padding: 16 
+  },
+  loader: { 
+    marginTop: 40 
+  },
+  errorText: { 
+    textAlign: 'center', 
+    marginTop: 40, 
+    color: COLORS.primary, 
+    fontWeight: '500' 
+  },
+  shopCard: { 
+    backgroundColor: COLORS.surface, 
+    padding: 16, 
+    borderRadius: 12, 
+    marginBottom: 12, 
+    borderWidth: 1, 
+    borderColor: COLORS.border 
+  },
+  shopHeader: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    marginBottom: 8 
+  },
+  rankBadge: { 
+    backgroundColor: COLORS.textDark, 
+    width: 28, 
+    height: 28, 
+    borderRadius: 14, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    marginRight: 12 
+  },
+  rankText: { 
+    color: COLORS.surface, 
+    fontSize: 12, 
+    fontWeight: '700' 
+  },
+  shopName: { 
+    fontSize: 16, 
+    fontWeight: '600', 
+    color: COLORS.textDark, 
+    flex: 1 
+  },
+  shopDetails: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    paddingLeft: 40 
+  },
+  detailText: { 
+    fontSize: 13, 
+    color: COLORS.textMuted, 
+    fontWeight: '500' 
+  },
 });

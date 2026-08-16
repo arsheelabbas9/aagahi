@@ -1,7 +1,7 @@
 /**
  * ============================================================================
  * @file shopkeeper.tsx
- * @title Aagahi Merchant Compliance Portal
+ * @title Aagahi Merchant Compliance Portal (Localization Integrated)
  * @description 
  * The isolated dashboard for commercial property owners. Allows authenticated 
  * shopkeepers to manage their physical location coordinates, update mandatory 
@@ -9,9 +9,11 @@
  * unique cryptographic QR identity hash.
  * 
  * @upgrades_in_this_build
+ * - LOCALIZATION ENGINE: Injected `useLanguage` hook. Mapped all static text, 
+ *   including alerts and interactive UI toggles, to the global bilingual dictionary.
  * - TYPESCRIPT STRICT MODE FIX: Eradicated the `any` type leakage during JSON 
  *   parsing. The network stream is now strictly typed as `unknown` before being 
- *   safely cast to `ComplianceApiResponse`, resolving the assignment compilation error.
+ *   safely cast to `ComplianceApiResponse`.
  * - EXTREME VERBOSITY: Applied mathematical unpacking, explicit type annotations, 
  *   and robust try/catch blocks across the entire file structure.
  * ============================================================================
@@ -32,8 +34,9 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
-// Global Identity Manager & Centralized Network Configuration
+// Global Identity Manager, Localization Engine, & Centralized Network Configuration
 import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../context/LanguageContext'; // INJECTED: Multi-language Support
 import { API_BASE_URL } from '../config/api';
 
 // ==========================================
@@ -109,7 +112,13 @@ export default function ShopkeeperScreen(): React.JSX.Element {
   
   // --- Global Identity Extraction ---
   // Access the persistent user session to extract the true Merchant ID for database syncing.
-  const { user } = useAuth();
+  const authContext = useAuth();
+  const user = authContext.user;
+
+  // --- Localization Engine Extraction ---
+  // Access the language state to swap text between English and Nastaliq Urdu
+  const languageContext = useLanguage();
+  const translateKey: (key: any) => string = languageContext.t;
 
   // --- Explicitly Typed State Management ---
   // ALL STATES DEFAULT TO FALSE AS PER REQUIREMENT. NO FREE POINTS.
@@ -199,26 +208,30 @@ export default function ShopkeeperScreen(): React.JSX.Element {
         const extractedSafetyScore: number = parsedResponse.safety_score;
         setCurrentScore(extractedSafetyScore);
 
-        // Step 9: Provide immediate positive operational confirmation to the merchant
-        const alertTitle: string = "Compliance Synchronized";
-        const alertMessage: string = `Your safety score has been successfully recalculated to ${extractedSafetyScore}/100.`;
-        Alert.alert(alertTitle, alertMessage);
+        // Step 9: Provide immediate localized positive operational confirmation to the merchant
+        const alertTitle: string = translateKey('shop_alert_sync_title');
+        
+        // Dynamically replace the `{score}` placeholder in the translation dictionary with the live score variable
+        const rawAlertMessage: string = translateKey('shop_alert_sync_msg');
+        const formattedAlertMessage: string = rawAlertMessage.replace('{score}', extractedSafetyScore.toString());
+        
+        Alert.alert(alertTitle, formattedAlertMessage);
       } else {
         // Step 10: Extract server-side exception details if available via FastAPI HTTPExceptions
-        const defaultErrorMessage: string = "Failed to update compliance registry.";
+        const defaultErrorMessage: string = translateKey('shop_alert_err_msg');
         const serverErrorMessage: string = parsedResponse.detail || defaultErrorMessage;
-        Alert.alert("Submission Error", serverErrorMessage);
+        Alert.alert(translateKey('shop_alert_err_title'), serverErrorMessage);
       }
 
     } catch (error: unknown) {
       // Step 11: Catch catastrophic network or connection drops securely
-      let exceptionMessage: string = "Network connection to the compliance server failed.";
+      let exceptionMessage: string = translateKey('shop_alert_conn_msg');
       
       if (error instanceof Error) {
         exceptionMessage = `Compliance Exception: ${error.message}`;
       }
       
-      Alert.alert("Connection Error", exceptionMessage);
+      Alert.alert(translateKey('shop_alert_conn_title'), exceptionMessage);
       console.error("[ShopkeeperScreen.handleChecklistUpdate] Fatal synchronization failure: ", error);
 
     } finally {
@@ -232,7 +245,7 @@ export default function ShopkeeperScreen(): React.JSX.Element {
    * Isolates the mapping logic to ensure strict parameter definitions and adds mathematical 
    * safety against invalid state mutation attempts.
    * 
-   * @param {string} label - The highly readable, clear descriptive text for the infrastructure item.
+   * @param {string} label - The highly readable, clear localized text for the infrastructure item.
    * @param {boolean} value - The current boolean state of the checklist item.
    * @param {React.Dispatch<React.SetStateAction<boolean>>} setter - The state mutation function.
    * @returns {React.JSX.Element} The strictly rendered touchable toggle row.
@@ -283,8 +296,8 @@ export default function ShopkeeperScreen(): React.JSX.Element {
       {/* --- Top Navigation Header --- */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.headerSubtitle}>Merchant Portal</Text>
-          <Text style={styles.headerTitle}>Facility Management</Text>
+          <Text style={styles.headerSubtitle}>{translateKey('shop_header_subtitle')}</Text>
+          <Text style={styles.headerTitle}>{translateKey('shop_header_title')}</Text>
         </View>
         <TouchableOpacity 
           style={styles.logoutButton}
@@ -301,11 +314,11 @@ export default function ShopkeeperScreen(): React.JSX.Element {
         {/* --- PILLAR 4: CRYPTOGRAPHIC QR CODE IDENTITY UTILITY --- */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>Cryptographic Compliance QR</Text>
+            <Text style={styles.cardTitle}>{translateKey('shop_qr_title')}</Text>
             <MaterialCommunityIcons name="qrcode" size={26} color={COLORS.primary} />
           </View>
           <Text style={styles.cardDescription}>
-            Display this secure digital token to visiting Wardens and Citizens for instant hardware scanning and compliance verification.
+            {translateKey('shop_qr_desc')}
           </Text>
 
           {/* Visual QR Hash Display Container */}
@@ -313,7 +326,7 @@ export default function ShopkeeperScreen(): React.JSX.Element {
             <View style={styles.qrMockPlaceholder}>
               <MaterialCommunityIcons name="qrcode-scan" size={64} color={COLORS.textDark} />
             </View>
-            <Text style={styles.qrHashLabel}>Active Cryptographic Hash:</Text>
+            <Text style={styles.qrHashLabel}>{translateKey('shop_qr_hash_label')}</Text>
             <Text style={styles.qrHashText} numberOfLines={1} ellipsizeMode="middle">
               {shopCryptographicHash}
             </Text>
@@ -323,7 +336,7 @@ export default function ShopkeeperScreen(): React.JSX.Element {
         {/* Compliance Badge & Reputation Section */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>Safety Compliance Status</Text>
+            <Text style={styles.cardTitle}>{translateKey('shop_comp_title')}</Text>
             <MaterialCommunityIcons 
               name="shield-check" 
               size={24} 
@@ -331,7 +344,7 @@ export default function ShopkeeperScreen(): React.JSX.Element {
             />
           </View>
           <Text style={styles.cardDescription}>
-            Your public rating is broadcasted dynamically to consumer scans to build local trust and incentivize hazard mitigation.
+            {translateKey('shop_comp_desc')}
           </Text>
           
           <View style={styles.scoreContainer}>
@@ -341,50 +354,50 @@ export default function ShopkeeperScreen(): React.JSX.Element {
             ]}>
               {currentScore} / 100
             </Text>
-            <Text style={styles.scoreLabel}>Aagahi Safety Score</Text>
+            <Text style={styles.scoreLabel}>{translateKey('shop_score_label')}</Text>
           </View>
         </View>
 
         {/* Spatial Data Management Section */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>Geographic Registry</Text>
+            <Text style={styles.cardTitle}>{translateKey('shop_geo_title')}</Text>
             <MaterialCommunityIcons name="map-marker-radius" size={24} color={COLORS.primary} />
           </View>
           <Text style={styles.cardDescription}>
-            Ensure your store's physical coordinates are accurate for the emergency routing engine.
+            {translateKey('shop_geo_desc')}
           </Text>
           <TouchableOpacity 
             style={styles.actionButton}
             activeOpacity={0.85}
-            onPress={() => Alert.alert("Geographic Registry", "Location calibration module active.")}
+            onPress={() => Alert.alert(translateKey('shop_geo_alert_title'), translateKey('shop_geo_alert_msg'))}
           >
-            <Text style={styles.actionButtonText}>CALIBRATE LOCATION</Text>
+            <Text style={styles.actionButtonText}>{translateKey('shop_btn_calibrate')}</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Infrastructure Checklist Section (EXPANDED & SIMPLIFIED ENGLISH) */}
+        {/* Infrastructure Checklist Section (LOCALIZED MATRIX) */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>Monthly Safety Checklist</Text>
+            <Text style={styles.cardTitle}>{translateKey('shop_check_title')}</Text>
             <MaterialCommunityIcons name="clipboard-check-outline" size={24} color={COLORS.textDark} />
           </View>
           <Text style={styles.cardDescription}>
-            Check all the rules your shop currently follows to update your live safety score.
+            {translateKey('shop_check_desc')}
           </Text>
 
           {/* Interactive Checklist Toggle Matrix */}
           <View style={styles.checklistContainer}>
-            {/* Core Metrics mapped to Easy English */}
-            {renderChecklistRow("Fire Extinguisher is Present & Working", extinguisherOperational, setExtinguisherOperational)}
-            {renderChecklistRow("No Exposed Wires or Overloaded Sockets", wiringInspected, setWiringInspected)}
-            {renderChecklistRow("Exit Routes are Completely Clear of Clutter", exitsUnobstructed, setExitsUnobstructed)}
-            {renderChecklistRow("Emergency Backup Lights are Tested & Active", emergencyLightingActive, setEmergencyLightingActive)}
+            {/* Core Metrics mapped dynamically to language dictionaries */}
+            {renderChecklistRow(translateKey('shop_chk_extinguisher'), extinguisherOperational, setExtinguisherOperational)}
+            {renderChecklistRow(translateKey('shop_chk_wiring'), wiringInspected, setWiringInspected)}
+            {renderChecklistRow(translateKey('shop_chk_exits'), exitsUnobstructed, setExitsUnobstructed)}
+            {renderChecklistRow(translateKey('shop_chk_lights'), emergencyLightingActive, setEmergencyLightingActive)}
             
-            {/* New Advanced Environmental Metrics mapped to Easy English */}
-            {renderChecklistRow("Cardboard & Chemicals Kept Away From Heat", flammablesIsolated, setFlammablesIsolated)}
-            {renderChecklistRow("Gas Cylinders are Upright & Safely Secured", gasSecured, setGasSecured)}
-            {renderChecklistRow("Exhaust Fans & AC Vents are Unblocked", ventilationClear, setVentilationClear)}
+            {/* New Advanced Environmental Metrics mapped dynamically to language dictionaries */}
+            {renderChecklistRow(translateKey('shop_chk_flammables'), flammablesIsolated, setFlammablesIsolated)}
+            {renderChecklistRow(translateKey('shop_chk_gas'), gasSecured, setGasSecured)}
+            {renderChecklistRow(translateKey('shop_chk_ventilation'), ventilationClear, setVentilationClear)}
           </View>
 
           <TouchableOpacity 
@@ -400,7 +413,7 @@ export default function ShopkeeperScreen(): React.JSX.Element {
             {isSubmitting ? (
               <ActivityIndicator color={COLORS.textDark} size="small" />
             ) : (
-              <Text style={styles.actionButtonTextSecondary}>UPDATE CHECKLIST</Text>
+              <Text style={styles.actionButtonTextSecondary}>{translateKey('shop_btn_update')}</Text>
             )}
           </TouchableOpacity>
         </View>

@@ -1,3 +1,23 @@
+/**
+ * ============================================================================
+ * @file chat.tsx
+ * @title Area-Based Community Chat Engine (Localization Integrated)
+ * @author Aagahi Core Engineering Division
+ * 
+ * @description
+ * Implements Pillar 2: Area-Based Chat Rooms. Allows users across all roles 
+ * to coordinate instantly within geographic neighborhoods using unique usernames.
+ * 
+ * @upgrades_applied
+ * - ZERO FEATURE LOSS: Maintained 100% of the dynamic channel creation, media 
+ *   attachment logic, and network synchronization routines.
+ * - LOCALIZATION: Injected the global `useLanguage` hook to dynamically render 
+ *   Urdu or English based on persistent state.
+ * - MANDATORY EXPANSION: Unpacked ternary operators into explicit blocks, added 
+ *   deep JSDoc commentary, and strictly typed all intermediate variables.
+ * ============================================================================
+ */
+
 import React, { useState, useEffect } from 'react';
 import { 
   StyleSheet, 
@@ -16,9 +36,11 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
-// NEW: Global Identity Manager & Centralized Network Configuration
+// Global Identity Manager & Centralized Network Configuration
 import { useAuth } from '../context/AuthContext';
 import { API_BASE_URL } from '../config/api';
+// Injected Localization Context Hook
+import { useLanguage } from '../context/LanguageContext';
 
 // ==========================================
 // SYSTEM CONFIGURATION & TYPE DEFINITIONS
@@ -130,6 +152,9 @@ export default function ChatScreen(): React.JSX.Element {
   // --- Global Identity Extraction ---
   // Replaces the "Identity Amnesia" bug by fetching the persistent user session.
   const { user } = useAuth();
+  
+  // --- Localization Engine Extraction ---
+  const { t } = useLanguage();
 
   // --- Explicitly Typed State Management ---
   const [activeChannelId, setActiveChannelId] = useState<string>('saddar');
@@ -323,12 +348,16 @@ export default function ChatScreen(): React.JSX.Element {
         captionText = 'Attached official PDF document.';
       }
 
+      const activeUserName: string = user ? user.username : 'current_user_active';
+      const activeUserRole: 'citizen' | 'shopkeeper' | 'warden' = user ? (user.role as 'citizen' | 'shopkeeper' | 'warden') : 'citizen';
+      const currentTimestamp: string = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
       const mediaMessage: ChatMessage = {
         id: Date.now().toString(),
-        username: user ? user.username : 'current_user_active',
-        role: user ? (user.role as 'citizen' | 'shopkeeper' | 'warden') : 'citizen',
+        username: activeUserName,
+        role: activeUserRole,
         text: captionText,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        timestamp: currentTimestamp,
         mediaType: type,
         mediaUrl: mockMediaUrl,
         fileName: mockFileName
@@ -422,12 +451,14 @@ export default function ChatScreen(): React.JSX.Element {
    * @returns {React.JSX.Element} The rendered message bubble.
    */
   const renderMessageItem = ({ item }: { item: ChatMessage }): React.JSX.Element => {
-    // Dynamically determine badge background styling based on user role mapping
-    const roleBadgeStyle = item.role === 'warden' 
-      ? styles.roleWarden 
-      : item.role === 'shopkeeper' 
-      ? styles.roleShopkeeper 
-      : styles.roleCitizen;
+    // Dynamically determine badge background styling based on user role mapping.
+    // Unpacked for clarity and strict adherence to the expansion rule.
+    let roleBadgeStyle: object = styles.roleCitizen;
+    if (item.role === 'warden') {
+      roleBadgeStyle = styles.roleWarden;
+    } else if (item.role === 'shopkeeper') {
+      roleBadgeStyle = styles.roleShopkeeper;
+    }
 
     return (
       <View style={styles.messageBubble}>
@@ -453,8 +484,8 @@ export default function ChatScreen(): React.JSX.Element {
           <View style={styles.videoCard}>
             <MaterialCommunityIcons name="video-box" size={32} color={COLORS.primary} />
             <View style={{ marginLeft: 10, flex: 1 }}>
-              <Text style={styles.videoCardTitle}>Incident Video Recording</Text>
-              <Text style={styles.videoCardSub}>Tap to stream secure media file</Text>
+              <Text style={styles.videoCardTitle}>{t('chat_video_title')}</Text>
+              <Text style={styles.videoCardSub}>{t('chat_video_sub')}</Text>
             </View>
             <MaterialCommunityIcons name="play-circle" size={28} color={COLORS.textDark} />
           </View>
@@ -466,7 +497,7 @@ export default function ChatScreen(): React.JSX.Element {
             <MaterialCommunityIcons name="file-document-outline" size={28} color={COLORS.primary} />
             <View style={{ marginLeft: 10, flex: 1 }}>
               <Text style={styles.fileCardTitle} numberOfLines={1}>{item.fileName}</Text>
-              <Text style={styles.fileCardSub}>Verified Document • Secure PDF</Text>
+              <Text style={styles.fileCardSub}>{t('chat_file_sub')}</Text>
             </View>
             <MaterialCommunityIcons name="download-box-outline" size={22} color={COLORS.textMuted} />
           </View>
@@ -488,9 +519,9 @@ export default function ChatScreen(): React.JSX.Element {
       {/* Top Header Navigation */}
       <View style={styles.header}>
         <TouchableOpacity activeOpacity={0.8} onPress={() => router.back()}>
-          <Text style={styles.backText}>← Back to Dashboard</Text>
+          <Text style={styles.backText}>{t('chat_back_btn')}</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Community Chat Rooms</Text>
+        <Text style={styles.headerTitle}>{t('chat_header_title')}</Text>
       </View>
 
       {/* Geographic Channel Selector Horizontal Scroll */}
@@ -510,7 +541,7 @@ export default function ChatScreen(): React.JSX.Element {
               onPress={() => setIsCreatingChannel(!isCreatingChannel)}
             >
               <MaterialCommunityIcons name={isCreatingChannel ? "close" : "plus"} size={20} color={COLORS.primary} />
-              <Text style={styles.addChannelText}>{isCreatingChannel ? "Cancel" : "New Zone"}</Text>
+              <Text style={styles.addChannelText}>{isCreatingChannel ? t('chat_cancel') : t('chat_new_zone')}</Text>
             </TouchableOpacity>
           }
 
@@ -526,8 +557,7 @@ export default function ChatScreen(): React.JSX.Element {
                   {item.name}
                 </Text>
                 <Text style={[styles.channelTabSub, isSelected && styles.channelTabSubSelected]}>
-                  {/* PHASE 4: Destroyed fake numbers. Emphasizing public transparency. */}
-                  Public Zone
+                  {t('chat_public_zone')}
                 </Text>
               </TouchableOpacity>
             );
@@ -540,7 +570,7 @@ export default function ChatScreen(): React.JSX.Element {
         <View style={styles.createChannelContainer}>
           <TextInput 
             style={styles.createChannelInput}
-            placeholder="Type new area name (e.g., Liaquatabad)..."
+            placeholder={t('chat_placeholder_new_zone')}
             placeholderTextColor={COLORS.textMuted}
             value={newChannelName}
             onChangeText={setNewChannelName}
@@ -551,7 +581,7 @@ export default function ChatScreen(): React.JSX.Element {
             activeOpacity={0.8}
             onPress={handleCreateNewChannel}
           >
-            <Text style={styles.createChannelBtnText}>Create</Text>
+            <Text style={styles.createChannelBtnText}>{t('chat_create')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -574,7 +604,7 @@ export default function ChatScreen(): React.JSX.Element {
         {isLoading ? (
           <View style={styles.loaderContainer}>
             <ActivityIndicator size="large" color={COLORS.primary} />
-            <Text style={styles.loaderText}>Syncing Network Timeline...</Text>
+            <Text style={styles.loaderText}>{t('chat_loading')}</Text>
           </View>
         ) : (
           <FlatList
@@ -586,7 +616,7 @@ export default function ChatScreen(): React.JSX.Element {
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
                 <MaterialCommunityIcons name="forum-outline" size={48} color={COLORS.textMuted} />
-                <Text style={styles.emptyText}>No messages yet in this neighborhood. Start the conversation!</Text>
+                <Text style={styles.emptyText}>{t('chat_empty')}</Text>
               </View>
             }
           />
@@ -607,7 +637,7 @@ export default function ChatScreen(): React.JSX.Element {
 
           <TextInput 
             style={styles.chatInput}
-            placeholder={`Message #${currentChannel.name}...`}
+            placeholder={`${t('chat_input_placeholder')}${currentChannel.name}...`}
             placeholderTextColor={COLORS.textMuted}
             value={inputText}
             onChangeText={setInputText}
