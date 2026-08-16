@@ -1,19 +1,28 @@
 /**
  * ============================================================================
  * @file dashboard.tsx
- * @title Aagahi Spatial Dashboard Engine (The Ultimate Golden Baseline Merge)
+ * @title Aagahi Spatial Dashboard Engine (The Ultimate Golden Baseline & Localization Merge)
  * @author Arsheel Abbas (Aagahi Spatial Division)
  * 
  * @description 
  * This module operates as the absolute central nervous system for geographic 
- * visualization within the Aagahi platform. It merges the flawless, unified 
- * interactive reporting HUD with advanced OSRM pathfinding, true in-app 
- * navigation, and exponential-backoff telemetry syncing.
+ * visualization and platform interaction within the Aagahi environment. It seamlessly
+ * integrates a high-end layout-driven User Interface with advanced OSRM pathfinding, 
+ * true in-app navigation, exponential-backoff telemetry syncing, and a bilingual 
+ * Urdu/English localization engine.
  * 
- * @upgrades_applied
- * - WADIAH LOCALIZATION ENGINE: Injected the global `useLanguage` hook. 
- *   Replaced static UI text with strict dictionary mappings and added a 
- *   Language Toggle pill to the primary Viewport HUD natively.
+ * @architecture
+ * - STRICT TYPING: Employs uncompromising TypeScript definitions to mathematically 
+ *   prevent runtime memory faults and undefined pointer errors.
+ * - MODULAR UI CONDITIONAL RENDERING: Upgraded to support a dual-state viewport. 
+ *   It boots into a premium, non-map layout dashboard first, explicitly hiding the 
+ *   map behind a state wall to save rendering pipeline costs until spatial visualization 
+ *   is strictly required by the user.
+ * - NATIVE RENDERING: Utilizes native spatial engines (`react-native-maps`) 
+ *   strictly bound to hardware-accelerated viewports for 60FPS performance.
+ * - ASYNC ISOLATION: Features robust, exponential-backoff network fallback systems.
+ * - UI GUARANTEE: Implements explicitly defined `zIndex` and `elevation` layers 
+ *   to ensure Floating Action Buttons (FABs) and HUD panels never clip or vanish.
  * ============================================================================
  */
 
@@ -25,7 +34,6 @@ import {
   useState, 
   useEffect, 
   useRef, 
-  useCallback, 
   Fragment 
 } from 'react';
 
@@ -43,7 +51,8 @@ import {
   TextInput, 
   Keyboard, 
   FlatList, 
-  KeyboardAvoidingView
+  KeyboardAvoidingView,
+  ScrollView
 } from 'react-native';
 
 // ============================================================================
@@ -57,7 +66,6 @@ import MapView, {
   Marker, 
   PROVIDER_GOOGLE, 
   Region, 
-  Camera,
   Polyline, 
   MarkerDragStartEndEvent, 
   UserLocationChangeEvent 
@@ -77,16 +85,14 @@ import {
 } from '@expo/vector-icons';
 
 import { 
-  router, 
-  useFocusEffect 
+  router 
 } from 'expo-router';
 
 // ============================================================================
-// 5. GLOBAL IDENTITY MANAGER & BACKEND API
+// 5. GLOBAL IDENTITY, LOCALIZATION & BACKEND API
 // ============================================================================
 import { 
-  useAuth,
-  UserSession
+  useAuth
 } from '../context/AuthContext';
 
 import { 
@@ -109,6 +115,7 @@ interface ThemeColors {
   primary: string;
   surface: string;
   surfaceDark: string;
+  surfaceLightGrid: string;
   textDark: string;
   textMuted: string;
   overlay: string;
@@ -117,6 +124,9 @@ interface ThemeColors {
   fabShadow: string;
   safeRoute: string;
   alternateRoute: string;
+  emeraldGreen: string;
+  oceanBlue: string;
+  sunflowerYellow: string;
 }
 
 /**
@@ -178,9 +188,10 @@ interface RouteMetrics {
 
 /**
  * @type InteractionMode
- * @description Enforces explicit state machines for what the user is currently doing on the map.
+ * @description Enforces explicit state machines for what the user is currently doing on the screen.
+ * @note Includes 'home_dashboard' to serve as the default application state hiding the map natively.
  */
-type InteractionMode = 'view' | 'report_single' | 'report_dual' | 'routing' | 'active_navigation';
+type InteractionMode = 'home_dashboard' | 'view' | 'report_single' | 'report_dual' | 'routing' | 'active_navigation';
 
 // ------------------------------------------
 // NOMINATIM OPENSTREETMAP API TYPES
@@ -234,17 +245,21 @@ interface VehicleProfileConfig {
 // ============================================================================
 
 const COLORS: ThemeColors = {
-  primary: '#D90429',
+  primary: '#D90429', // Deep energetic red
   surface: '#FFFFFF',
   surfaceDark: '#1E2028',
-  textDark: '#2B2D42',
-  textMuted: '#8D99AE',
+  surfaceLightGrid: '#F8FAFC',
+  textDark: '#1E293B',
+  textMuted: '#64748B',
   overlay: 'rgba(30, 32, 40, 0.95)',
   warning: '#F59E0B',
   disabled: '#E5E7EB',
   fabShadow: '#000000',
-  safeRoute: '#3B82F6',
+  safeRoute: '#3B82F6', // Deep blue
   alternateRoute: '#8B5CF6',
+  emeraldGreen: '#10B981', // Rich green
+  oceanBlue: '#0EA5E9',
+  sunflowerYellow: '#FBBF24',
 };
 
 const BUILDING_LABEL_WHITE: string = '#FFFFFF';
@@ -339,6 +354,12 @@ const HAZARD_FETCH_RETRY_BASE_DELAY_MS: number = 800;
 // PURE UTILITY & MATHEMATICAL ENGINES
 // ============================================================================
 
+/**
+ * @function getHazardEmoji
+ * @description Translates the raw PostgreSQL enum string into a visual Unicode emoji explicitly.
+ * @param {string} hazardType - The categorical string definition of the hazard.
+ * @returns {string} The standardized visual representation character.
+ */
 const getHazardEmoji = (hazardType: string): string => {
   try {
     const isStringValid: boolean = typeof hazardType === 'string' && hazardType.length > 0;
@@ -353,166 +374,194 @@ const getHazardEmoji = (hazardType: string): string => {
     if (normalizedType.includes('road') || normalizedType.includes('block')) return '🚧';
 
     return '⚠️';
-  } catch (extractionError: unknown) {
-    console.warn('[getHazardEmoji] Parsing failed, falling back to default.', extractionError);
+  } catch (error: unknown) {
+    console.warn('[getHazardEmoji] Parsing failed, falling back to default.', error);
     return '⚠️';
   }
 };
 
-const decodePolyline = (encodedStr: string): CoordinatePayload[] => {
+/**
+ * @function decodePolyline
+ * @description Extracts and decrypts the compressed Google Maps Polyline format strictly into an 
+ * array of standard float-based coordinate pairs for spatial mapping engines natively.
+ * @param {string} encodedStringPayload - The compressed alphanumeric geometry string.
+ * @returns {CoordinatePayload[]} Structurally defined array of standard map nodes.
+ */
+const decodePolyline = (encodedStringPayload: string): CoordinatePayload[] => {
   try {
-    const isEncodedStrValid: boolean = typeof encodedStr === 'string' && encodedStr.length > 0;
+    const isEncodedStrValid: boolean = typeof encodedStringPayload === 'string' && encodedStringPayload.length > 0;
     if (!isEncodedStrValid) return [];
 
-    const poly: CoordinatePayload[] = [];
-    let index: number = 0;
-    const len: number = encodedStr.length;
-    let lat: number = 0;
-    let lng: number = 0;
+    const polylineNodeArray: CoordinatePayload[] = [];
+    let payloadIndexIterator: number = 0;
+    const stringTotalLength: number = encodedStringPayload.length;
+    let mathematicalLatitudeAccumulator: number = 0;
+    let mathematicalLongitudeAccumulator: number = 0;
 
-    while (index < len) {
-      let b: number;
-      let shift: number = 0;
-      let result: number = 0;
+    while (payloadIndexIterator < stringTotalLength) {
+      let extractedByteValue: number;
+      let binaryShiftOffset: number = 0;
+      let parsedIntegerResult: number = 0;
 
       do {
-        b = encodedStr.charCodeAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (b >= 0x20);
-      const dlat: number = result & 1 ? ~(result >> 1) : result >> 1;
-      lat += dlat;
+        extractedByteValue = encodedStringPayload.charCodeAt(payloadIndexIterator++) - 63;
+        parsedIntegerResult |= (extractedByteValue & 0x1f) << binaryShiftOffset;
+        binaryShiftOffset += 5;
+      } while (extractedByteValue >= 0x20);
+      
+      const deltaLatitudeTransformation: number = parsedIntegerResult & 1 ? ~(parsedIntegerResult >> 1) : parsedIntegerResult >> 1;
+      mathematicalLatitudeAccumulator += deltaLatitudeTransformation;
 
-      shift = 0;
-      result = 0;
+      binaryShiftOffset = 0;
+      parsedIntegerResult = 0;
       
       do {
-        b = encodedStr.charCodeAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (b >= 0x20);
-      const dlng: number = result & 1 ? ~(result >> 1) : result >> 1;
-      lng += dlng;
+        extractedByteValue = encodedStringPayload.charCodeAt(payloadIndexIterator++) - 63;
+        parsedIntegerResult |= (extractedByteValue & 0x1f) << binaryShiftOffset;
+        binaryShiftOffset += 5;
+      } while (extractedByteValue >= 0x20);
+      
+      const deltaLongitudeTransformation: number = parsedIntegerResult & 1 ? ~(parsedIntegerResult >> 1) : parsedIntegerResult >> 1;
+      mathematicalLongitudeAccumulator += deltaLongitudeTransformation;
 
-      const newPoint: CoordinatePayload = {
-        latitude: lat / 1e5, 
-        longitude: lng / 1e5 
+      const decompressedSpatialNode: CoordinatePayload = {
+        latitude: mathematicalLatitudeAccumulator / 1e5, 
+        longitude: mathematicalLongitudeAccumulator / 1e5 
       };
       
-      poly.push(newPoint);
+      polylineNodeArray.push(decompressedSpatialNode);
     }
-    return poly;
+    return polylineNodeArray;
   } catch (decodeError: unknown) {
-    console.error('[decodePolyline] Polyline decompression failed:', decodeError);
+    console.error('[decodePolyline] Polyline decompression algorithmic execution failed:', decodeError);
     return [];
   }
 };
 
-const parseEWKB = (hexStr: string): ParsedSpatialData | null => {
+/**
+ * @function parseEWKB
+ * @description Extracts geometric data from Extended Well-Known Binary hexadecimal strings structurally.
+ * Parses endianness explicitly and constructs CoordinatePayload sets.
+ * @param {string} hexadecimalString - The EWKB representation string natively fetched from PostgreSQL.
+ * @returns {ParsedSpatialData | null} The structural geometry or null if invalid.
+ */
+const parseEWKB = (hexadecimalString: string): ParsedSpatialData | null => {
   try {
-    const isHexLengthValid: boolean = typeof hexStr === 'string' && hexStr.length >= 42;
+    const isHexLengthValid: boolean = typeof hexadecimalString === 'string' && hexadecimalString.length >= 42;
     if (!isHexLengthValid) return null;
 
-    const readUInt32LE = (hex: string, byteOffset: number): number => {
-      const charOffset: number = byteOffset * 2;
-      const hex4Bytes: string = hex.substring(charOffset, charOffset + 8);
+    const readUnsignedInteger32LittleEndian = (hexadecimalTarget: string, logicalByteOffset: number): number => {
+      const charArrayOffsetPointer: number = logicalByteOffset * 2;
+      const hexadecimalFourByteSlice: string = hexadecimalTarget.substring(charArrayOffsetPointer, charArrayOffsetPointer + 8);
       
-      const isHexValid: boolean = hex4Bytes.length === 8;
-      if (!isHexValid) return NaN;
+      const isSliceLengthValid: boolean = hexadecimalFourByteSlice.length === 8;
+      if (!isSliceLengthValid) return NaN;
 
-      const buffer: ArrayBuffer = new ArrayBuffer(4);
-      const view: DataView = new DataView(buffer);
-      for (let indexVal = 0; indexVal < 4; indexVal++) {
-        const slice: string = hex4Bytes.substring(indexVal * 2, indexVal * 2 + 2);
-        view.setUint8(indexVal, parseInt(slice, 16));
+      const memoryBuffer: ArrayBuffer = new ArrayBuffer(4);
+      const dataViewInterface: DataView = new DataView(memoryBuffer);
+      for (let iteratorIndex = 0; iteratorIndex < 4; iteratorIndex++) {
+        const structuralSlice: string = hexadecimalFourByteSlice.substring(iteratorIndex * 2, iteratorIndex * 2 + 2);
+        dataViewInterface.setUint8(iteratorIndex, parseInt(structuralSlice, 16));
       }
-      return view.getUint32(0, true);
+      return dataViewInterface.getUint32(0, true);
     };
 
-    const readDoubleLE = (hex: string, byteOffset: number): number => {
-      const charOffset: number = byteOffset * 2;
-      const hex8Bytes: string = hex.substring(charOffset, charOffset + 16);
+    const readDoublePrecisionFloatLittleEndian = (hexadecimalTarget: string, logicalByteOffset: number): number => {
+      const charArrayOffsetPointer: number = logicalByteOffset * 2;
+      const hexadecimalEightByteSlice: string = hexadecimalTarget.substring(charArrayOffsetPointer, charArrayOffsetPointer + 16);
       
-      const isHexValid: boolean = hex8Bytes.length === 16;
-      if (!isHexValid) return NaN;
+      const isSliceLengthValid: boolean = hexadecimalEightByteSlice.length === 16;
+      if (!isSliceLengthValid) return NaN;
 
-      const buffer: ArrayBuffer = new ArrayBuffer(8);
-      const view: DataView = new DataView(buffer);
-      for (let indexVal = 0; indexVal < 8; indexVal++) {
-        const slice: string = hex8Bytes.substring(indexVal * 2, indexVal * 2 + 2);
-        view.setUint8(indexVal, parseInt(slice, 16));
+      const memoryBuffer: ArrayBuffer = new ArrayBuffer(8);
+      const dataViewInterface: DataView = new DataView(memoryBuffer);
+      for (let iteratorIndex = 0; iteratorIndex < 8; iteratorIndex++) {
+        const structuralSlice: string = hexadecimalEightByteSlice.substring(iteratorIndex * 2, iteratorIndex * 2 + 2);
+        dataViewInterface.setUint8(iteratorIndex, parseInt(structuralSlice, 16));
       }
-      return view.getFloat64(0, true);
+      return dataViewInterface.getFloat64(0, true);
     };
 
-    const endianSlice: string = hexStr.substring(0, 2);
-    const endian: number = parseInt(endianSlice, 16);
+    const endianDetectionSlice: string = hexadecimalString.substring(0, 2);
+    const endianNumericalValue: number = parseInt(endianDetectionSlice, 16);
     
-    const isLittleEndian: boolean = endian === 1;
-    if (!isLittleEndian) return null;
+    const isStrictlyLittleEndianArchitecture: boolean = endianNumericalValue === 1;
+    if (!isStrictlyLittleEndianArchitecture) return null;
 
-    const typeInt: number = readUInt32LE(hexStr, 1);
-    const hasSRID: boolean = (typeInt & 0x20000000) !== 0;
-    const geometryType: number = typeInt & 0xff;
+    const metadataTypeInteger: number = readUnsignedInteger32LittleEndian(hexadecimalString, 1);
+    const hasSpatialReferenceSystemIdentifier: boolean = (metadataTypeInteger & 0x20000000) !== 0;
+    const resolvedGeometryTypeIdentifier: number = metadataTypeInteger & 0xff;
 
-    let currentByteOffset: number = 5;
-    if (hasSRID) currentByteOffset += 4;
+    let dynamicByteOffsetPointer: number = 5;
+    if (hasSpatialReferenceSystemIdentifier) {
+        dynamicByteOffsetPointer += 4;
+    }
 
-    if (geometryType === 1) {
-      const extractedLng: number = readDoubleLE(hexStr, currentByteOffset);
-      const extractedLat: number = readDoubleLE(hexStr, currentByteOffset + 8);
+    if (resolvedGeometryTypeIdentifier === 1) { // Point extraction logic
+      const extractedLongitudeFloat: number = readDoublePrecisionFloatLittleEndian(hexadecimalString, dynamicByteOffsetPointer);
+      const extractedLatitudeFloat: number = readDoublePrecisionFloatLittleEndian(hexadecimalString, dynamicByteOffsetPointer + 8);
       
-      const isFloatValid: boolean = !isNaN(extractedLat) && !isNaN(extractedLng);
-      if (isFloatValid) {
+      const isMathematicalFloatValid: boolean = !isNaN(extractedLatitudeFloat) && !isNaN(extractedLongitudeFloat);
+      if (isMathematicalFloatValid) {
         return { 
           type: 'point', 
-          coordinates: [{ latitude: extractedLat, longitude: extractedLng }] 
+          coordinates: [{ latitude: extractedLatitudeFloat, longitude: extractedLongitudeFloat }] 
         };
       }
-    } else if (geometryType === 2) {
-      const numPoints: number = readUInt32LE(hexStr, currentByteOffset);
-      currentByteOffset += 4;
+    } else if (resolvedGeometryTypeIdentifier === 2) { // LineString extraction logic
+      const numberOfDataPoints: number = readUnsignedInteger32LittleEndian(hexadecimalString, dynamicByteOffsetPointer);
+      dynamicByteOffsetPointer += 4;
 
-      const lineCoords: CoordinatePayload[] = [];
-      for (let indexVal = 0; indexVal < numPoints; indexVal++) {
-        const currentLng: number = readDoubleLE(hexStr, currentByteOffset);
-        const currentLat: number = readDoubleLE(hexStr, currentByteOffset + 8);
+      const lineCoordinateArrayCache: CoordinatePayload[] = [];
+      for (let pointIteratorIndex = 0; pointIteratorIndex < numberOfDataPoints; pointIteratorIndex++) {
+        const currentLongitudeNode: number = readDoublePrecisionFloatLittleEndian(hexadecimalString, dynamicByteOffsetPointer);
+        const currentLatitudeNode: number = readDoublePrecisionFloatLittleEndian(hexadecimalString, dynamicByteOffsetPointer + 8);
         
-        const isCurrentFloatValid: boolean = !isNaN(currentLat) && !isNaN(currentLng);
-        if (isCurrentFloatValid) {
-          lineCoords.push({ latitude: currentLat, longitude: currentLng });
+        const isCurrentNodeFloatValid: boolean = !isNaN(currentLatitudeNode) && !isNaN(currentLongitudeNode);
+        if (isCurrentNodeFloatValid) {
+          lineCoordinateArrayCache.push({ latitude: currentLatitudeNode, longitude: currentLongitudeNode });
         }
-        currentByteOffset += 16;
+        dynamicByteOffsetPointer += 16;
       }
 
-      const isLineValid: boolean = lineCoords.length >= 2;
-      if (isLineValid) {
-        return { type: 'linestring', coordinates: lineCoords };
+      const isGeneratedLineStructurallyValid: boolean = lineCoordinateArrayCache.length >= 2;
+      if (isGeneratedLineStructurallyValid) {
+        return { type: 'linestring', coordinates: lineCoordinateArrayCache };
       }
     }
     return null;
   } catch (extractionError: unknown) {
-    console.error('[parseEWKB] Binary decomposition failed:', extractionError);
+    console.error('[parseEWKB] Binary decomposition failed explicitly during geometric translation:', extractionError);
     return null;
   }
 };
 
-const calculateHaversineDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+/**
+ * @function calculateHaversineDistance
+ * @description Utilizes the Haversine formula to rigorously determine the great-circle distance 
+ * between two points mathematically natively mapping onto Earth's surface sphere.
+ * @param {number} latitudeNodeOne - Origin latitude.
+ * @param {number} longitudeNodeOne - Origin longitude.
+ * @param {number} latitudeNodeTwo - Destination latitude.
+ * @param {number} longitudeNodeTwo - Destination longitude.
+ * @returns {number} Distance directly returned in Kilometers logically.
+ */
+const calculateHaversineDistance = (latitudeNodeOne: number, longitudeNodeOne: number, latitudeNodeTwo: number, longitudeNodeTwo: number): number => {
   try {
-    const earthRadiusKm: number = 6371;
-    const dLat: number = (lat2 - lat1) * (Math.PI / 180);
-    const dLon: number = (lon2 - lon1) * (Math.PI / 180);
+    const earthRadiusConstantKilometers: number = 6371;
+    const deltaLatitudeRadians: number = (latitudeNodeTwo - latitudeNodeOne) * (Math.PI / 180);
+    const deltaLongitudeRadians: number = (longitudeNodeTwo - longitudeNodeOne) * (Math.PI / 180);
 
-    const aPart1: number = Math.sin(dLat / 2) * Math.sin(dLat / 2);
-    const aPart2: number = Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180));
-    const aPart3: number = Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const computationalPartOne: number = Math.sin(deltaLatitudeRadians / 2) * Math.sin(deltaLatitudeRadians / 2);
+    const computationalPartTwo: number = Math.cos(latitudeNodeOne * (Math.PI / 180)) * Math.cos(latitudeNodeTwo * (Math.PI / 180));
+    const computationalPartThree: number = Math.sin(deltaLongitudeRadians / 2) * Math.sin(deltaLongitudeRadians / 2);
     
-    const a: number = aPart1 + (aPart2 * aPart3);
-    const c: number = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const mathematicalChordLengthSquare: number = computationalPartOne + (computationalPartTwo * computationalPartThree);
+    const angularDistanceCalculation: number = 2 * Math.atan2(Math.sqrt(mathematicalChordLengthSquare), Math.sqrt(1 - mathematicalChordLengthSquare));
     
-    return earthRadiusKm * c;
-  } catch (mathError: unknown) {
-    console.error('[calculateHaversineDistance] Distance math failed:', mathError);
+    return earthRadiusConstantKilometers * angularDistanceCalculation;
+  } catch (haversineExecutionError: unknown) {
+    console.error('[calculateHaversineDistance] Mathematical distance calculation engine failed:', haversineExecutionError);
     return 0;
   }
 };
@@ -521,72 +570,64 @@ const calculateHaversineDistance = (lat1: number, lon1: number, lat2: number, lo
  * @function calculateBearing
  * @description Calculates the exact compass heading (0-360 degrees) for map rotation natively.
  */
-const calculateBearing = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+const calculateBearing = (latitudeOrigin: number, longitudeOrigin: number, latitudeDestination: number, longitudeDestination: number): number => {
   try {
-    const toRadians = (degrees: number): number => degrees * (Math.PI / 180);
-    const toDegrees = (radians: number): number => radians * (180 / Math.PI);
+    const convertToRadians = (degreesPayload: number): number => degreesPayload * (Math.PI / 180);
+    const convertToDegrees = (radiansPayload: number): number => radiansPayload * (180 / Math.PI);
 
-    const phi1: number = toRadians(lat1);
-    const phi2: number = toRadians(lat2);
-    const deltaLambda: number = toRadians(lon2 - lon1);
+    const phiOriginRadians: number = convertToRadians(latitudeOrigin);
+    const phiDestinationRadians: number = convertToRadians(latitudeDestination);
+    const deltaLambdaRadians: number = convertToRadians(longitudeDestination - longitudeOrigin);
 
-    const y: number = Math.sin(deltaLambda) * Math.cos(phi2);
-    const xPart1: number = Math.cos(phi1) * Math.sin(phi2);
-    const xPart2: number = Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLambda);
-    const x: number = xPart1 - xPart2;
+    const trigonometricYComponent: number = Math.sin(deltaLambdaRadians) * Math.cos(phiDestinationRadians);
+    const trigonometricXPartOne: number = Math.cos(phiOriginRadians) * Math.sin(phiDestinationRadians);
+    const trigonometricXPartTwo: number = Math.sin(phiOriginRadians) * Math.cos(phiDestinationRadians) * Math.cos(deltaLambdaRadians);
+    const trigonometricXComponent: number = trigonometricXPartOne - trigonometricXPartTwo;
 
-    const theta: number = Math.atan2(y, x);
-    const rawBearing: number = toDegrees(theta);
-    const normalizedBearing: number = (rawBearing + 360) % 360;
+    const angularThetaCalculated: number = Math.atan2(trigonometricYComponent, trigonometricXComponent);
+    const rawCompassBearingDegrees: number = convertToDegrees(angularThetaCalculated);
+    const normalizedCompassBearing: number = (rawCompassBearingDegrees + 360) % 360;
 
-    return normalizedBearing;
-  } catch (trigError: unknown) {
-    console.error("[calculateBearing] Trigonometric failure:", trigError);
+    return normalizedCompassBearing;
+  } catch (bearingError: unknown) {
+    console.error("[calculateBearing] Trigonometric trajectory failure explicitly caught:", bearingError);
     return 0; 
   }
 };
 
-const isCoordinateWithinKarachiBounds = (coordinate: CoordinatePayload): boolean => {
+const extractBestPlaceName = (suggestionBlock: NominatimSuggestion): string => {
   try {
-    const isLatValid: boolean = coordinate.latitude >= KARACHI_SOFT_BOUNDS.minLat && coordinate.latitude <= KARACHI_SOFT_BOUNDS.maxLat;
-    const isLngValid: boolean = coordinate.longitude >= KARACHI_SOFT_BOUNDS.minLng && coordinate.longitude <= KARACHI_SOFT_BOUNDS.maxLng;
-    return isLatValid && isLngValid;
-  } catch (boundsError: unknown) {
-    return true;
-  }
-};
+    const namedetailsNameField: string | undefined = suggestionBlock.namedetails ? suggestionBlock.namedetails.name : undefined;
+    const isNamedetailsFieldValid: boolean = typeof namedetailsNameField === 'string' && namedetailsNameField.trim().length > 0;
+    if (isNamedetailsFieldValid) return (namedetailsNameField as string).trim();
 
-const extractBestPlaceName = (suggestion: NominatimSuggestion): string => {
-  try {
-    const namedetailsName: string | undefined = suggestion.namedetails ? suggestion.namedetails.name : undefined;
-    const isNamedetailsValid: boolean = typeof namedetailsName === 'string' && namedetailsName.trim().length > 0;
-    if (isNamedetailsValid) return (namedetailsName as string).trim();
+    const nestedAddressBlock: NominatimAddressBlock | undefined = suggestionBlock.address;
+    const isNestedAddressBlockValid: boolean = nestedAddressBlock !== undefined && nestedAddressBlock !== null;
 
-    const addressBlock: NominatimAddressBlock | undefined = suggestion.address;
-    const isAddressBlockValid: boolean = addressBlock !== undefined && addressBlock !== null;
-
-    if (isAddressBlockValid) {
-      const candidateFields: string[] = ['amenity', 'shop', 'building', 'office', 'tourism', 'leisure', 'government'];
-      for (let indexVal: number = 0; indexVal < candidateFields.length; indexVal++) {
-        const fieldKey: string = candidateFields[indexVal];
-        const fieldValue: string | undefined = (addressBlock as NominatimAddressBlock)[fieldKey];
-        const isFieldValid: boolean = typeof fieldValue === 'string' && fieldValue.trim().length > 0;
-        if (isFieldValid) return (fieldValue as string).trim();
+    if (isNestedAddressBlockValid) {
+      const explicitCandidateFieldsArray: string[] = ['amenity', 'shop', 'building', 'office', 'tourism', 'leisure', 'government'];
+      for (let iteratorCount: number = 0; iteratorCount < explicitCandidateFieldsArray.length; iteratorCount++) {
+        const activeFieldKey: string = explicitCandidateFieldsArray[iteratorCount];
+        const activeFieldValue: string | undefined = (nestedAddressBlock as NominatimAddressBlock)[activeFieldKey];
+        const isFieldStringValid: boolean = typeof activeFieldValue === 'string' && activeFieldValue.trim().length > 0;
+        if (isFieldStringValid) return (activeFieldValue as string).trim();
       }
     }
-    return suggestion.display_name.split(',')[0].trim();
-  } catch (extractionError: unknown) {
-    return suggestion.display_name;
+    return suggestionBlock.display_name.split(',')[0].trim();
+  } catch (extractionFaultError: unknown) {
+    console.error("[extractBestPlaceName] Failed to logically extract address block naming.", extractionFaultError);
+    return suggestionBlock.display_name;
   }
 };
 
-const extractSecondaryAddressLine = (suggestion: NominatimSuggestion, resolvedPrimaryName: string): string => {
+const extractSecondaryAddressLine = (suggestionBlock: NominatimSuggestion, resolvedPrimaryNameString: string): string => {
   try {
-    const fullChainSegments: string[] = suggestion.display_name.split(',').map((segment: string) => segment.trim());
-    const remainingSegments: string[] = fullChainSegments.filter((segment: string) => segment.length > 0 && segment !== resolvedPrimaryName);
-    const slicedSegments: string[] = remainingSegments.slice(0, 2);
-    return slicedSegments.join(', ');
-  } catch (segmentError: unknown) {
+    const fullChainSegmentsArray: string[] = suggestionBlock.display_name.split(',').map((segmentString: string) => segmentString.trim());
+    const remainingSegmentsFilteredArray: string[] = fullChainSegmentsArray.filter((segmentString: string) => segmentString.length > 0 && segmentString !== resolvedPrimaryNameString);
+    const slicedSegmentsLimitArray: string[] = remainingSegmentsFilteredArray.slice(0, 2);
+    return slicedSegmentsLimitArray.join(', ');
+  } catch (addressParseError: unknown) {
+    console.error("[extractSecondaryAddressLine] Structural failure caught natively.", addressParseError);
     return '';
   }
 };
@@ -598,15 +639,16 @@ const extractSecondaryAddressLine = (suggestion: NominatimSuggestion, resolvedPr
 export default function DashboardScreen(): React.JSX.Element {
   
   // ==========================================
-  // 1. GLOBAL IDENTITY & NATIVE VIEWPORT REFS
+  // 1. GLOBAL IDENTITY, LOCALIZATION & REFS
   // ==========================================
   const { user, logout } = useAuth();
   
-  // WADIAH UPGRADE: Extract the strict typing language context payload
+  // WADIAH LOCALIZATION ENGINE EXTRACTION
   const languageContextPayload = useLanguage();
-  const activeLanguageCode: string = languageContextPayload.currentLanguage;
-  const switchLanguageFunction: (newLanguageCode: 'en' | 'ur') => Promise<void> = languageContextPayload.switchLanguageCode;
+  const activeLanguageCode: string = languageContextPayload.locale;
+  const switchLanguageFunction: (locale: 'en' | 'ur') => void = languageContextPayload.setLocale;
   const translateFunction: (key: any) => string = languageContextPayload.t;
+  const toggleLanguageFunction: () => void = languageContextPayload.toggleLanguage;
 
   const mapRef = useRef<MapView>(null);
   const isMountedRef = useRef<boolean>(true);
@@ -618,7 +660,7 @@ export default function DashboardScreen(): React.JSX.Element {
   const vehicleRecalculateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ==========================================
-  // 2. STATE MANAGEMENT (Fully Unpacked)
+  // 2. STATE MANAGEMENT (Fully Unpacked & Typed)
   // ==========================================
   
   const hazardsTuple = useState<HazardData[]>([]);
@@ -633,7 +675,8 @@ export default function DashboardScreen(): React.JSX.Element {
   const isDarkMode: boolean = isDarkModeTuple[0];
   const setIsDarkMode: React.Dispatch<React.SetStateAction<boolean>> = isDarkModeTuple[1];
   
-  const interactionModeTuple = useState<InteractionMode>('view');
+  // PRIMARY ARCHITECTURAL SHIFT: Initializing into the Home Dashboard to hide the map engine.
+  const interactionModeTuple = useState<InteractionMode>('home_dashboard');
   const interactionMode: InteractionMode = interactionModeTuple[0];
   const setInteractionMode: React.Dispatch<React.SetStateAction<InteractionMode>> = interactionModeTuple[1];
   
@@ -712,7 +755,7 @@ export default function DashboardScreen(): React.JSX.Element {
   const setDistanceRemainingNav: React.Dispatch<React.SetStateAction<number>> = distanceRemainingNavTuple[1];
 
   // ==========================================
-  // 3. LIFECYCLE HOOKS
+  // 3. LIFECYCLE HOOKS & TIMERS
   // ==========================================
 
   useEffect(() => {
@@ -720,29 +763,41 @@ export default function DashboardScreen(): React.JSX.Element {
     try {
       initializeLocationServices();
       fetchLiveHazards();
-    } catch (lifecycleError: unknown) {
-      console.error('[DashboardScreen.useEffect] Lifecycle mounting failure: ', lifecycleError);
+    } catch (lifecycleMountError: unknown) {
+      console.error('[DashboardScreen.useEffect] Lifecycle mounting operational failure: ', lifecycleMountError);
     }
     
     return () => {
-      isMountedRef.current = false;
-      if (rerouteTimeoutRef.current) clearTimeout(rerouteTimeoutRef.current);
-      if (vehicleRecalculateTimeoutRef.current) clearTimeout(vehicleRecalculateTimeoutRef.current);
+      try {
+        isMountedRef.current = false;
+        if (rerouteTimeoutRef.current) clearTimeout(rerouteTimeoutRef.current);
+        if (vehicleRecalculateTimeoutRef.current) clearTimeout(vehicleRecalculateTimeoutRef.current);
+      } catch (cleanupError: unknown) {
+        console.error('[DashboardScreen.useEffect] Memory cleanup failure natively.', cleanupError);
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    hazardRefreshIntervalRef.current = setInterval(() => {
-      console.log("[DashboardScreen.interval] Executing silent hazard background sync...");
-      fetchLiveHazards();
-    }, HAZARD_REFRESH_INTERVAL_MS);
+    try {
+      hazardRefreshIntervalRef.current = setInterval(() => {
+        console.log("[DashboardScreen.interval] Executing silent hazard background synchronization natively...");
+        fetchLiveHazards();
+      }, HAZARD_REFRESH_INTERVAL_MS);
+    } catch (intervalCreationError: unknown) {
+      console.error("[DashboardScreen.interval] Network timer execution failed to bind.", intervalCreationError);
+    }
 
     return () => {
-      const hasActiveInterval: boolean = hazardRefreshIntervalRef.current !== null;
-      if (hasActiveInterval) {
-        clearInterval(hazardRefreshIntervalRef.current as ReturnType<typeof setInterval>);
-        hazardRefreshIntervalRef.current = null;
+      try {
+        const hasActiveSyncInterval: boolean = hazardRefreshIntervalRef.current !== null;
+        if (hasActiveSyncInterval) {
+          clearInterval(hazardRefreshIntervalRef.current as ReturnType<typeof setInterval>);
+          hazardRefreshIntervalRef.current = null;
+        }
+      } catch (intervalClearError: unknown) {
+        console.error("[DashboardScreen.interval] Network timer failed to unmount natively.", intervalClearError);
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -750,16 +805,20 @@ export default function DashboardScreen(): React.JSX.Element {
 
   useEffect(() => {
     return () => {
-      const hasStartTimer: boolean = startSearchDebounceRef.current !== null;
-      if (hasStartTimer) {
-        clearTimeout(startSearchDebounceRef.current as ReturnType<typeof setTimeout>);
-        startSearchDebounceRef.current = null;
-      }
-      
-      const hasDestTimer: boolean = destinationSearchDebounceRef.current !== null;
-      if (hasDestTimer) {
-        clearTimeout(destinationSearchDebounceRef.current as ReturnType<typeof setTimeout>);
-        destinationSearchDebounceRef.current = null;
+      try {
+        const hasStartDebounceTimerActive: boolean = startSearchDebounceRef.current !== null;
+        if (hasStartDebounceTimerActive) {
+          clearTimeout(startSearchDebounceRef.current as ReturnType<typeof setTimeout>);
+          startSearchDebounceRef.current = null;
+        }
+        
+        const hasDestinationDebounceTimerActive: boolean = destinationSearchDebounceRef.current !== null;
+        if (hasDestinationDebounceTimerActive) {
+          clearTimeout(destinationSearchDebounceRef.current as ReturnType<typeof setTimeout>);
+          destinationSearchDebounceRef.current = null;
+        }
+      } catch (debouncePurgeError: unknown) {
+        console.error("[DashboardScreen.debounce] Search stack memory purge fault explicitly.", debouncePurgeError);
       }
     };
   }, []);
@@ -770,57 +829,57 @@ export default function DashboardScreen(): React.JSX.Element {
    */
   const initializeLocationServices = async (): Promise<void> => {
     try {
-      console.log("[initializeLocationServices] Requesting explicit foreground GPS permissions...");
+      console.log("[initializeLocationServices] Requesting explicit foreground GPS permissions from OS layer...");
       
-      const permissionResponse: Location.PermissionResponse = await Location.requestForegroundPermissionsAsync();
-      const hardwareStatus: Location.PermissionStatus = permissionResponse.status;
-      const isPermissionGranted: boolean = hardwareStatus === 'granted';
+      const hardwarePermissionResponseObject: Location.PermissionResponse = await Location.requestForegroundPermissionsAsync();
+      const hardwareAccessStatusString: Location.PermissionStatus = hardwarePermissionResponseObject.status;
+      const isHardwarePermissionGrantedBool: boolean = hardwareAccessStatusString === 'granted';
 
-      if (!isPermissionGranted) {
+      if (!isHardwarePermissionGrantedBool) {
         Alert.alert(
           'Location Services Denied',
-          'Aagahi requires hardware GPS permissions to automatically center the map on your physical location.'
+          'Aagahi requires hardware GPS permissions to automatically center the map routing engine on your physical location natively.'
         );
         return;
       }
 
-      const hardwareLocation: LocationObject = await Location.getCurrentPositionAsync({
+      const activeHardwareLocationNode: LocationObject = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.BestForNavigation,
       });
 
-      const preciseCoordinate: CoordinatePayload = {
-        latitude: hardwareLocation.coords.latitude,
-        longitude: hardwareLocation.coords.longitude,
+      const structurallyPreciseCoordinateMap: CoordinatePayload = {
+        latitude: activeHardwareLocationNode.coords.latitude,
+        longitude: activeHardwareLocationNode.coords.longitude,
       };
 
       if (isMountedRef.current) {
-        setCurrentMapCenter(preciseCoordinate);
-        setUserHardwareLocation(preciseCoordinate);
+        setCurrentMapCenter(structurallyPreciseCoordinateMap);
+        setUserHardwareLocation(structurallyPreciseCoordinateMap);
       }
 
       try {
-        const reverseGeocodePayload: LocationGeocodedAddress[] = await Location.reverseGeocodeAsync(preciseCoordinate);
-        const isPayloadValid: boolean = Array.isArray(reverseGeocodePayload) && reverseGeocodePayload.length > 0;
+        const reverseGeocodedAddressPayloadArray: LocationGeocodedAddress[] = await Location.reverseGeocodeAsync(structurallyPreciseCoordinateMap);
+        const isGeocodePayloadStructurallyValid: boolean = Array.isArray(reverseGeocodedAddressPayloadArray) && reverseGeocodedAddressPayloadArray.length > 0;
         
-        if (isPayloadValid) {
-          const firstObj: LocationGeocodedAddress = reverseGeocodePayload[0];
-          const streetStr: string = firstObj.street || '';
-          const districtStr: string = firstObj.district || firstObj.city || '';
-          const formattedAddress: string = `${streetStr} ${districtStr}`.trim();
+        if (isGeocodePayloadStructurallyValid) {
+          const firstValidAddressObject: LocationGeocodedAddress = reverseGeocodedAddressPayloadArray[0];
+          const extractedStreetString: string = firstValidAddressObject.street || '';
+          const extractedDistrictString: string = firstValidAddressObject.district || firstValidAddressObject.city || '';
+          const mathematicallyFormattedAddressString: string = `${extractedStreetString} ${extractedDistrictString}`.trim();
           
-          if (formattedAddress.length > 3 && isMountedRef.current) {
-            setStartLocationText(formattedAddress);
+          if (mathematicallyFormattedAddressString.length > 3 && isMountedRef.current) {
+            setStartLocationText(mathematicallyFormattedAddressString);
           }
         }
-      } catch (geocodeError: unknown) {
-        console.warn('[initializeLocationServices] Native reverse geocoding restricted by OS.', geocodeError);
+      } catch (nativeGeocodeError: unknown) {
+        console.warn('[initializeLocationServices] Native reverse geocoding API was explicitly restricted by the host OS layer.', nativeGeocodeError);
       }
 
-      const isMapReady: boolean = mapRef.current !== null;
-      if (isMapReady) {
+      const isHardwareMapInstanceReady: boolean = mapRef.current !== null;
+      if (isHardwareMapInstanceReady && interactionMode !== 'home_dashboard') {
         mapRef.current!.animateCamera(
           {
-            center: preciseCoordinate,
+            center: structurallyPreciseCoordinateMap,
             pitch: GPS_CAMERA_PITCH,
             heading: 0,
             altitude: GPS_CAMERA_ALTITUDE,
@@ -830,171 +889,172 @@ export default function DashboardScreen(): React.JSX.Element {
         );
         if (isMountedRef.current) setInitialGpsSnapped(true);
       }
-    } catch (hardwareError: unknown) {
-      const errorMessage: string = hardwareError instanceof Error ? hardwareError.message : 'Unexpected GPS error.';
-      console.error('[initializeLocationServices] Hardware Failure: ', errorMessage);
+    } catch (hardwareExecutionError: unknown) {
+      const explicitHardwareErrorMessage: string = hardwareExecutionError instanceof Error ? hardwareExecutionError.message : 'Unexpected hardware GPS execution error encountered natively.';
+      console.error('[initializeLocationServices] Hardware Level Architecture Failure: ', explicitHardwareErrorMessage);
     }
   };
 
-  const delayExecution = (milliseconds: number): Promise<void> => {
-    return new Promise((resolve) => setTimeout(resolve, milliseconds));
+  const executeExecutionDelay = (delayMillisecondsCount: number): Promise<void> => {
+    return new Promise((promiseResolve) => setTimeout(promiseResolve, delayMillisecondsCount));
   };
 
   /** 
    * @function fetchLiveHazards
-   * @description Fetches live hazards with exponential-backoff retries structurally. 
+   * @description Fetches live hazards directly from Supabase via Python FastAPI with exponential-backoff retries structurally built-in. 
    */
   const fetchLiveHazards = async (): Promise<void> => {
     if (isMountedRef.current) setIsLoadingMapData(true);
 
-    let attemptNumber: number = 0;
-    let lastErrorMessage: string = 'Unknown spatial retrieval error.';
+    let activeRetryAttemptIterator: number = 0;
+    let storedLastErrorMessageString: string = 'Unknown spatial backend retrieval error triggered.';
 
-    while (attemptNumber <= MAX_HAZARD_FETCH_RETRIES) {
+    while (activeRetryAttemptIterator <= MAX_HAZARD_FETCH_RETRIES) {
       try {
-        const targetEndpoint: string = `${API_BASE_URL}/api/hazards`;
-        const response: Response = await fetch(targetEndpoint, {
+        const fullyQualifiedTargetEndpointString: string = `${API_BASE_URL}/api/hazards`;
+        const networkResponseObject: Response = await fetch(fullyQualifiedTargetEndpointString, {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },
         });
 
-        const rawText: string = await response.text();
-        const parsedResponse: HazardApiResponse = JSON.parse(rawText) as HazardApiResponse;
+        const rawNetworkResponseTextData: string = await networkResponseObject.text();
+        const jsonParsedResponseStructure: HazardApiResponse = JSON.parse(rawNetworkResponseTextData) as HazardApiResponse;
 
-        const isNetworkSuccess: boolean = response.ok;
-        const isDataValid: boolean = Array.isArray(parsedResponse.data);
+        const isNetworkSuccessFlagChecked: boolean = networkResponseObject.ok;
+        const isDataArrayStructurallyValid: boolean = Array.isArray(jsonParsedResponseStructure.data);
 
-        if (isNetworkSuccess && isDataValid) {
+        if (isNetworkSuccessFlagChecked && isDataArrayStructurallyValid) {
           if (isMountedRef.current) {
-            setHazards(parsedResponse.data);
+            setHazards(jsonParsedResponseStructure.data);
           }
           if (isMountedRef.current) setIsLoadingMapData(false);
           return;
         }
 
-        lastErrorMessage = parsedResponse.detail || 'Unknown spatial retrieval error.';
-      } catch (networkError: unknown) {
-        if (networkError instanceof Error) {
-            lastErrorMessage = networkError.message;
+        storedLastErrorMessageString = jsonParsedResponseStructure.detail || 'Unknown spatial retrieval error returned from cloud architecture.';
+      } catch (networkCatchError: unknown) {
+        if (networkCatchError instanceof Error) {
+            storedLastErrorMessageString = networkCatchError.message;
         } else {
-            lastErrorMessage = 'Failed to establish a spatial connection.';
+            storedLastErrorMessageString = 'Failed to establish a secure spatial connection over HTTPS.';
         }
       }
 
-      const isRetryAllowed: boolean = attemptNumber < MAX_HAZARD_FETCH_RETRIES;
-      if (isRetryAllowed) {
-        const sleepTimeMs: number = HAZARD_FETCH_RETRY_BASE_DELAY_MS * Math.pow(2, attemptNumber);
-        await delayExecution(sleepTimeMs);
+      const isBackoffRetryMathematicallyAllowed: boolean = activeRetryAttemptIterator < MAX_HAZARD_FETCH_RETRIES;
+      if (isBackoffRetryMathematicallyAllowed) {
+        const exponentiallyCalculatedSleepDelayMs: number = HAZARD_FETCH_RETRY_BASE_DELAY_MS * Math.pow(2, activeRetryAttemptIterator);
+        await executeExecutionDelay(exponentiallyCalculatedSleepDelayMs);
       }
-      attemptNumber += 1;
+      activeRetryAttemptIterator += 1;
     }
 
     if (isMountedRef.current) setIsLoadingMapData(false);
+    console.warn(`[fetchLiveHazards] Exhausted ${MAX_HAZARD_FETCH_RETRIES} attempts. Last Exception: ${storedLastErrorMessageString}`);
   };
 
   /** 
    * @function parseSpatialData
-   * @description Multi-format spatial extractor structurally: handles GeoJSON objects, 
-   * WKT strings natively, and EWKB hex strings via custom parser. 
+   * @description Multi-format spatial extraction compiler mapping: handles GeoJSON objects directly, 
+   * WKT strings natively, and EWKB hex strings via custom built byte-parser explicitly. 
    */
-  const parseSpatialData = (locationPayload: any): ParsedSpatialData | null => {
+  const parseSpatialData = (spatialLocationPayloadData: any): ParsedSpatialData | null => {
     try {
-      const isPayloadEmpty: boolean = !locationPayload;
-      if (isPayloadEmpty) return null;
+      const isPayloadStructurallyEmpty: boolean = !spatialLocationPayloadData;
+      if (isPayloadStructurallyEmpty) return null;
 
-      const isNativeObject: boolean = typeof locationPayload === 'object' && locationPayload !== null && !!locationPayload.type;
+      const isPayloadNativeObjectFormat: boolean = typeof spatialLocationPayloadData === 'object' && spatialLocationPayloadData !== null && !!spatialLocationPayloadData.type;
 
-      if (isNativeObject) {
-        const geoType: string = locationPayload.type;
-        const coordsArray: any[] = locationPayload.coordinates;
+      if (isPayloadNativeObjectFormat) {
+        const stringifiedGeoTypeIdentifier: string = spatialLocationPayloadData.type;
+        const mappedCoordinatesDataArray: any[] = spatialLocationPayloadData.coordinates;
 
-        const isPointCondition: boolean = geoType === 'Point' && Array.isArray(coordsArray) && coordsArray.length === 2;
-        if (isPointCondition) {
-          const lng: number = parseFloat(coordsArray[0]);
-          const lat: number = parseFloat(coordsArray[1]);
-          const isFloatValid: boolean = !isNaN(lat) && !isNaN(lng);
-          if (isFloatValid) {
-            return { type: 'point', coordinates: [{ latitude: lat, longitude: lng }] };
+        const isPointMathematicalConditionMet: boolean = stringifiedGeoTypeIdentifier === 'Point' && Array.isArray(mappedCoordinatesDataArray) && mappedCoordinatesDataArray.length === 2;
+        if (isPointMathematicalConditionMet) {
+          const longitudeFloatValue: number = parseFloat(mappedCoordinatesDataArray[0]);
+          const latitudeFloatValue: number = parseFloat(mappedCoordinatesDataArray[1]);
+          const isLatitudeLongitudeFloatValidCheck: boolean = !isNaN(latitudeFloatValue) && !isNaN(longitudeFloatValue);
+          if (isLatitudeLongitudeFloatValidCheck) {
+            return { type: 'point', coordinates: [{ latitude: latitudeFloatValue, longitude: longitudeFloatValue }] };
           }
         }
 
-        const isLineStringCondition: boolean = geoType === 'LineString' && Array.isArray(coordsArray) && coordsArray.length >= 2;
-        if (isLineStringCondition) {
-          const lineCoordinates: CoordinatePayload[] = [];
-          for (let indexVal = 0; indexVal < coordsArray.length; indexVal++) {
-            const pair: any = coordsArray[indexVal];
-            const isPairValid: boolean = Array.isArray(pair) && pair.length >= 2;
-            if (isPairValid) {
-              const lng: number = parseFloat(pair[0]);
-              const lat: number = parseFloat(pair[1]);
-              const isPairFloatValid: boolean = !isNaN(lat) && !isNaN(lng);
-              if (isPairFloatValid) {
-                  lineCoordinates.push({ latitude: lat, longitude: lng });
+        const isLineStringMathematicalConditionMet: boolean = stringifiedGeoTypeIdentifier === 'LineString' && Array.isArray(mappedCoordinatesDataArray) && mappedCoordinatesDataArray.length >= 2;
+        if (isLineStringMathematicalConditionMet) {
+          const iteratedLineCoordinatesArray: CoordinatePayload[] = [];
+          for (let internalIteratorCount = 0; internalIteratorCount < mappedCoordinatesDataArray.length; internalIteratorCount++) {
+            const nestedCoordinatePairArray: any = mappedCoordinatesDataArray[internalIteratorCount];
+            const isNestedPairStructurallyValid: boolean = Array.isArray(nestedCoordinatePairArray) && nestedCoordinatePairArray.length >= 2;
+            if (isNestedPairStructurallyValid) {
+              const iteratedLongitudeFloat: number = parseFloat(nestedCoordinatePairArray[0]);
+              const iteratedLatitudeFloat: number = parseFloat(nestedCoordinatePairArray[1]);
+              const isIteratedPairFloatValid: boolean = !isNaN(iteratedLatitudeFloat) && !isNaN(iteratedLongitudeFloat);
+              if (isIteratedPairFloatValid) {
+                iteratedLineCoordinatesArray.push({ latitude: iteratedLatitudeFloat, longitude: iteratedLongitudeFloat });
               }
             }
           }
-          const isLineConstructValid: boolean = lineCoordinates.length >= 2;
-          if (isLineConstructValid) {
-              return { type: 'linestring', coordinates: lineCoordinates };
+          const isConstructedLineLengthValid: boolean = iteratedLineCoordinatesArray.length >= 2;
+          if (isConstructedLineLengthValid) {
+            return { type: 'linestring', coordinates: iteratedLineCoordinatesArray };
           }
         }
       }
 
-      const isStringPayload: boolean = typeof locationPayload === 'string';
-      if (isStringPayload) {
-        const rawStringPayload: string = locationPayload.trim();
+      const isPayloadStringFormatType: boolean = typeof spatialLocationPayloadData === 'string';
+      if (isPayloadStringFormatType) {
+        const sanitizedRawStringPayloadData: string = spatialLocationPayloadData.trim();
 
-        const isHexFormat: boolean = /^[0-9A-Fa-f]+$/.test(rawStringPayload);
-        const isHexLengthValid: boolean = rawStringPayload.length >= 42;
-        if (isHexFormat && isHexLengthValid) {
-          const parsedEwkbData: ParsedSpatialData | null = parseEWKB(rawStringPayload);
-          if (parsedEwkbData) return parsedEwkbData;
+        const isRegexHexadecimalFormatValid: boolean = /^[0-9A-Fa-f]+$/.test(sanitizedRawStringPayloadData);
+        const isRegexHexadecimalLengthMet: boolean = sanitizedRawStringPayloadData.length >= 42;
+        if (isRegexHexadecimalFormatValid && isRegexHexadecimalLengthMet) {
+          const explicitlyParsedEwkbHexData: ParsedSpatialData | null = parseEWKB(sanitizedRawStringPayloadData);
+          if (explicitlyParsedEwkbHexData) return explicitlyParsedEwkbHexData;
         }
 
-        const isWktLineString: boolean = rawStringPayload.startsWith('LINESTRING');
-        if (isWktLineString) {
-          const strippedPrefix: string = rawStringPayload.replace('LINESTRING(', '').replace(')', '');
-          const points: string[] = strippedPrefix.split(',');
-          const extractedCoordinates: CoordinatePayload[] = [];
+        const isStringWktLineStringFormat: boolean = sanitizedRawStringPayloadData.startsWith('LINESTRING');
+        if (isStringWktLineStringFormat) {
+          const stringPrefixStrippedData: string = sanitizedRawStringPayloadData.replace('LINESTRING(', '').replace(')', '');
+          const wktPointSegmentsArray: string[] = stringPrefixStrippedData.split(',');
+          const iterativelyExtractedCoordinatesArray: CoordinatePayload[] = [];
           
-          for (let indexVal = 0; indexVal < points.length; indexVal++) {
-            const pointString: string = points[indexVal];
-            const parts: string[] = pointString.trim().split(' ');
-            const isPartsValid: boolean = parts.length >= 2;
-            if (isPartsValid) {
-              const lng: number = parseFloat(parts[0]);
-              const lat: number = parseFloat(parts[1]);
-              const arePartsFloatsValid: boolean = !isNaN(lat) && !isNaN(lng);
-              if (arePartsFloatsValid) {
-                  extractedCoordinates.push({ latitude: lat, longitude: lng });
+          for (let wktIteratorCount = 0; wktIteratorCount < wktPointSegmentsArray.length; wktIteratorCount++) {
+            const activeWktPointString: string = wktPointSegmentsArray[wktIteratorCount];
+            const wktSplitPartsArray: string[] = activeWktPointString.trim().split(' ');
+            const isWktSplitPartsArrayValid: boolean = wktSplitPartsArray.length >= 2;
+            if (isWktSplitPartsArrayValid) {
+              const longitudeWktFloat: number = parseFloat(wktSplitPartsArray[0]);
+              const latitudeWktFloat: number = parseFloat(wktSplitPartsArray[1]);
+              const areWktFloatsMathematicallyValid: boolean = !isNaN(latitudeWktFloat) && !isNaN(longitudeWktFloat);
+              if (areWktFloatsMathematicallyValid) {
+                iterativelyExtractedCoordinatesArray.push({ latitude: latitudeWktFloat, longitude: longitudeWktFloat });
               }
             }
           }
-          const isExtractedLineValid: boolean = extractedCoordinates.length >= 2;
-          if (isExtractedLineValid) {
-              return { type: 'linestring', coordinates: extractedCoordinates };
+          const isFinalExtractedLineArrayValid: boolean = iterativelyExtractedCoordinatesArray.length >= 2;
+          if (isFinalExtractedLineArrayValid) {
+            return { type: 'linestring', coordinates: iterativelyExtractedCoordinatesArray };
           }
         }
 
-        const isWktPoint: boolean = rawStringPayload.startsWith('POINT');
-        if (isWktPoint) {
-          const strippedPrefix: string = rawStringPayload.replace('POINT(', '').replace(')', '');
-          const parts: string[] = strippedPrefix.split(' ');
-          const isPartsArrayValid: boolean = parts.length === 2;
-          if (isPartsArrayValid) {
-            const lng: number = parseFloat(parts[0]);
-            const lat: number = parseFloat(parts[1]);
-            const isPartsFloatValid: boolean = !isNaN(lat) && !isNaN(lng);
-            if (isPartsFloatValid) {
-                return { type: 'point', coordinates: [{ latitude: lat, longitude: lng }] };
+        const isStringWktPointFormat: boolean = sanitizedRawStringPayloadData.startsWith('POINT');
+        if (isStringWktPointFormat) {
+          const wktPointPrefixStrippedString: string = sanitizedRawStringPayloadData.replace('POINT(', '').replace(')', '');
+          const wktPointSplitPartsArray: string[] = wktPointPrefixStrippedString.split(' ');
+          const isWktPointSplitArrayLengthValid: boolean = wktPointSplitPartsArray.length === 2;
+          if (isWktPointSplitArrayLengthValid) {
+            const parsedLongitudePointFloat: number = parseFloat(wktPointSplitPartsArray[0]);
+            const parsedLatitudePointFloat: number = parseFloat(wktPointSplitPartsArray[1]);
+            const isParsedPointFloatValidCheck: boolean = !isNaN(parsedLatitudePointFloat) && !isNaN(parsedLongitudePointFloat);
+            if (isParsedPointFloatValidCheck) {
+              return { type: 'point', coordinates: [{ latitude: parsedLatitudePointFloat, longitude: parsedLongitudePointFloat }] };
             }
           }
         }
       }
 
       return null;
-    } catch (parseError: unknown) {
-      console.error('[parseSpatialData] Extraction failed explicitly: ', parseError);
+    } catch (spatialParseError: unknown) {
+      console.error('[parseSpatialData] Spatial payload extraction failed dynamically in try/catch explicitly: ', spatialParseError);
       return null;
     }
   };
@@ -1006,85 +1066,69 @@ export default function DashboardScreen(): React.JSX.Element {
   /** 
    * @function handleUserLocationUpdate
    * @description THE TRUE IN-APP NAVIGATION ENGINE FIX
-   * Dynamically tracks the user's hardware coordinates. If the user is in 'active_navigation' mode, it actively calculates 
-   * distance, rotates the camera to follow the heading natively, and snaps to an extreme 3D zoom.
+   * Dynamically tracks the user's hardware coordinates natively mapping to camera tilt.
    */
-  const handleUserLocationUpdate = (event: UserLocationChangeEvent): void => {
+  const handleUserLocationUpdate = (eventPayloadObject: UserLocationChangeEvent): void => {
     try {
-      const coordinatePayloadExists: boolean = event.nativeEvent.coordinate !== undefined;
-      const mapInstanceExists: boolean = mapRef.current !== null;
+      const isCoordinatePayloadAttached: boolean = eventPayloadObject.nativeEvent.coordinate !== undefined;
+      const isMapInstanceHardwareBound: boolean = mapRef.current !== null;
 
-      if (mapInstanceExists && coordinatePayloadExists) {
-        const payloadLat: number = event.nativeEvent.coordinate!.latitude;
-        const payloadLng: number = event.nativeEvent.coordinate!.longitude;
-        const liveCoordinate: CoordinatePayload = { latitude: payloadLat, longitude: payloadLng };
+      if (isMapInstanceHardwareBound && isCoordinatePayloadAttached) {
+        const hardwarePayloadLatitudeNode: number = eventPayloadObject.nativeEvent.coordinate!.latitude;
+        const hardwarePayloadLongitudeNode: number = eventPayloadObject.nativeEvent.coordinate!.longitude;
+        const activeLiveCoordinateStructure: CoordinatePayload = { latitude: hardwarePayloadLatitudeNode, longitude: hardwarePayloadLongitudeNode };
 
         if (isMountedRef.current) {
-          setUserHardwareLocation(liveCoordinate);
+          setUserHardwareLocation(activeLiveCoordinateStructure);
         }
 
         // ==========================================
         // ACTIVE IN-APP NAVIGATION BRANCH (TRUE ROUTING)
         // ==========================================
-        const isActiveNavigation: boolean = interactionMode === 'active_navigation';
-        const hasSafeRouteMemory: boolean = calculatedSafeRoute !== null;
+        const isActiveInAppNavigationRunning: boolean = interactionMode === 'active_navigation';
+        const doesMemoryRetainSafeRouteData: boolean = calculatedSafeRoute !== null;
 
-        if (isActiveNavigation && hasSafeRouteMemory) {
+        if (isActiveInAppNavigationRunning && doesMemoryRetainSafeRouteData) {
           
-          const pathArray: CoordinatePayload[] = calculatedSafeRoute!.coordinates;
-          const totalNodes: number = pathArray.length;
+          const osrmPathMatrixArray: CoordinatePayload[] = calculatedSafeRoute!.coordinates;
+          const totalNodeCountNumber: number = osrmPathMatrixArray.length;
 
-          // Guard against out-of-bounds tracking mathematically
-          const isPathRemaining: boolean = currentNavStepIndex < totalNodes - 1;
+          const isPathVectorRemainingValid: boolean = currentNavStepIndex < totalNodeCountNumber - 1;
 
-          if (isPathRemaining) {
-            const nextNode: CoordinatePayload = pathArray[currentNavStepIndex + 1];
+          if (isPathVectorRemainingValid) {
+            const nextTargetOsrmNode: CoordinatePayload = osrmPathMatrixArray[currentNavStepIndex + 1];
             
-            // 1. Calculate physical distance to the very next node on the OSRM path natively
-            const gapToNextNodeKm: number = calculateHaversineDistance(payloadLat, payloadLng, nextNode.latitude, nextNode.longitude);
-            
-            // 2. Calculate the exact true bearing/heading the user needs to face dynamically
-            const liveHeading: number = calculateBearing(payloadLat, payloadLng, nextNode.latitude, nextNode.longitude);
+            const gapToNextTargetNodeKilometers: number = calculateHaversineDistance(hardwarePayloadLatitudeNode, hardwarePayloadLongitudeNode, nextTargetOsrmNode.latitude, nextTargetOsrmNode.longitude);
+            const liveDynamicCompassHeadingValue: number = calculateBearing(hardwarePayloadLatitudeNode, hardwarePayloadLongitudeNode, nextTargetOsrmNode.latitude, nextTargetOsrmNode.longitude);
 
-            // 3. Update the global distance remaining to destination structurally
-            const destinationNode: CoordinatePayload = pathArray[totalNodes - 1];
-            const distanceToDestKm: number = calculateHaversineDistance(payloadLat, payloadLng, destinationNode.latitude, destinationNode.longitude);
+            const absoluteDestinationFinalNode: CoordinatePayload = osrmPathMatrixArray[totalNodeCountNumber - 1];
+            const mathematicalDistanceToFinalDestKm: number = calculateHaversineDistance(hardwarePayloadLatitudeNode, hardwarePayloadLongitudeNode, absoluteDestinationFinalNode.latitude, absoluteDestinationFinalNode.longitude);
             
             if (isMountedRef.current) {
-              setDistanceRemainingNav(distanceToDestKm);
+              setDistanceRemainingNav(mathematicalDistanceToFinalDestKm);
             }
 
-            // 4. Node Advancement Logic: If user is within 30 meters (0.03km) of the target node, advance the index mathematically
-            const isNodeReached: boolean = gapToNextNodeKm < 0.03;
-            if (isNodeReached) {
+            const isTargetNodePhysicallyReached: boolean = gapToNextTargetNodeKilometers < 0.03;
+            if (isTargetNodePhysicallyReached) {
               if (isMountedRef.current) {
-                  setCurrentNavStepIndex(prev => prev + 1);
+                setCurrentNavStepIndex(prevIndexCount => prevIndexCount + 1);
               }
             }
 
-            // 5. Explicitly command the native map camera to lock onto the user, tilt, and rotate to follow the road
             mapRef.current!.animateCamera({
-              center: liveCoordinate,
-              pitch: NAV_CAMERA_PITCH, // Deep tactical tilt
-              heading: liveHeading, // Rotates the map dynamically
+              center: activeLiveCoordinateStructure,
+              pitch: NAV_CAMERA_PITCH,
+              heading: liveDynamicCompassHeadingValue,
               altitude: NAV_CAMERA_ALTITUDE,
-              zoom: NAV_CAMERA_ZOOM // Extreme zoom for turn-by-turn clarity
+              zoom: NAV_CAMERA_ZOOM
             }, { duration: 1000 });
+          } else {
+            Alert.alert("Destination Reached", "You have successfully navigated to your targeted physical coordinates natively.");
+            cancelActiveModalityState();
           }
-          
-          // Termination: If user has reached the final destination node naturally
-          else {
-            Alert.alert("Destination Reached", "You have arrived at your target securely.");
-            cancelActiveModality();
-          }
-        } 
-        
-        // ==========================================
-        // STANDARD BACKUP SNAP BRANCH
-        // ==========================================
-        else if (!initialGpsSnapped) {
+        } else if (!initialGpsSnapped && interactionMode !== 'home_dashboard') {
           mapRef.current!.animateCamera({
-            center: liveCoordinate,
+            center: activeLiveCoordinateStructure,
             pitch: GPS_CAMERA_PITCH,
             heading: 0,
             altitude: GPS_CAMERA_ALTITUDE,
@@ -1093,35 +1137,34 @@ export default function DashboardScreen(): React.JSX.Element {
 
           if (isMountedRef.current) setInitialGpsSnapped(true);
         }
-
       }
-    } catch (locationUpdateError: unknown) {
-      console.warn("[DashboardScreen.handleUserLocationUpdate] Interrupted: ", locationUpdateError);
+    } catch (locationUpdateTrackingError: unknown) {
+      console.warn("[DashboardScreen.handleUserLocationUpdate] Hardware mapping trajectory organically interrupted: ", locationUpdateTrackingError);
     }
   };
 
   /** 
    * @function handleRegionChangeComplete
-   * @description Tracks the live viewport center so mathematical pin drops always land correctly. 
+   * @description Tracks the live viewport center so mathematical pin drops always land perfectly in center natively. 
    */
-  const handleRegionChangeComplete = (region: Region): void => {
+  const handleRegionChangeComplete = (viewportRegionObject: Region): void => {
     try {
-      const isNavigating: boolean = interactionMode === 'active_navigation';
-      if (isNavigating) return;
+      const isSystemActivelyNavigatingFlag: boolean = interactionMode === 'active_navigation';
+      if (isSystemActivelyNavigatingFlag) return;
 
-      const updatedLat: number = region.latitude;
-      const updatedLng: number = region.longitude;
+      const nativelyUpdatedLatitudeNode: number = viewportRegionObject.latitude;
+      const nativelyUpdatedLongitudeNode: number = viewportRegionObject.longitude;
       
-      const newCenter: CoordinatePayload = { 
-          latitude: updatedLat, 
-          longitude: updatedLng 
+      const newCalculatedMapCenterNode: CoordinatePayload = { 
+          latitude: nativelyUpdatedLatitudeNode, 
+          longitude: nativelyUpdatedLongitudeNode 
       };
       
       if (isMountedRef.current) {
-          setCurrentMapCenter(newCenter);
+          setCurrentMapCenter(newCalculatedMapCenterNode);
       }
-    } catch (regionError: unknown) {
-      console.warn('[handleRegionChangeComplete] Live viewport tracking failure natively: ', regionError);
+    } catch (regionTrackingError: unknown) {
+      console.warn('[handleRegionChangeComplete] Live camera tracking structural hardware failure natively caught: ', regionTrackingError);
     }
   };
 
@@ -1129,57 +1172,57 @@ export default function DashboardScreen(): React.JSX.Element {
   // NOMINATIM SEARCH LOGIC (BUILDING-NAME-AWARE + DEBOUNCED)
   // ==========================================
 
-  const executeNominatimNetworkFetch = async (sanitizedQuery: string, targetField: 'start' | 'destination'): Promise<void> => {
+  const executeNominatimNetworkFetch = async (sanitizedQueryStringText: string, targetInputFieldEnum: 'start' | 'destination'): Promise<void> => {
     try {
-      const isStartTarget: boolean = targetField === 'start';
-      if (isStartTarget) {
+      const isStartTargetSelectedBoolean: boolean = targetInputFieldEnum === 'start';
+      if (isStartTargetSelectedBoolean) {
           setIsSearchingStartLocation(true);
       } else {
           setIsSearchingDestinationLocation(true);
       }
 
-      const encodedString: string = encodeURIComponent(sanitizedQuery);
-      const nominatimUrl: string =
-        `https://nominatim.openstreetmap.org/search?q=${encodedString}` +
+      const universallyEncodedQueryString: string = encodeURIComponent(sanitizedQueryStringText);
+      const fullyFormedNominatimApiUrl: string =
+        `https://nominatim.openstreetmap.org/search?q=${universallyEncodedQueryString}` +
         `&format=json&addressdetails=1&extratags=1&namedetails=1` +
         `&limit=${NOMINATIM_RESULT_LIMIT}&viewbox=${KARACHI_VIEWBOX}&bounded=1`;
 
-      const searchResponse: Response = await fetch(nominatimUrl, {
+      const httpNetworkSearchResponseObject: Response = await fetch(fullyFormedNominatimApiUrl, {
         headers: { 'Accept-Language': 'en', 'User-Agent': NOMINATIM_USER_AGENT },
       });
 
-      const responseText: string = await searchResponse.text();
-      const responseData: any[] = JSON.parse(responseText);
+      const rawHttpResponseTextData: string = await httpNetworkSearchResponseObject.text();
+      const rawJsonResponseDataArray: any[] = JSON.parse(rawHttpResponseTextData);
 
-      const parsedSuggestionsArray: NominatimSuggestion[] = responseData.map((item: any) => {
-          const struct: NominatimSuggestion = {
-            place_id: item.place_id,
-            display_name: item.display_name,
-            lat: item.lat,
-            lon: item.lon,
-            address: item.address,
-            namedetails: item.namedetails,
-            extratags: item.extratags,
-            class: item.class,
-            type: item.type,
-            importance: item.importance,
+      const strictlyParsedSuggestionsDataArray: NominatimSuggestion[] = rawJsonResponseDataArray.map((rawIteratedItem: any) => {
+          const structuredTypeSuggestionBlock: NominatimSuggestion = {
+            place_id: rawIteratedItem.place_id,
+            display_name: rawIteratedItem.display_name,
+            lat: rawIteratedItem.lat,
+            lon: rawIteratedItem.lon,
+            address: rawIteratedItem.address,
+            namedetails: rawIteratedItem.namedetails,
+            extratags: rawIteratedItem.extratags,
+            class: rawIteratedItem.class,
+            type: rawIteratedItem.type,
+            importance: rawIteratedItem.importance,
           };
-          return struct;
+          return structuredTypeSuggestionBlock;
       });
 
       if (isMountedRef.current) {
-          if (isStartTarget) {
-              setStartSearchSuggestions(parsedSuggestionsArray);
+          if (isStartTargetSelectedBoolean) {
+              setStartSearchSuggestions(strictlyParsedSuggestionsDataArray);
           } else {
-              setDestinationSearchSuggestions(parsedSuggestionsArray);
+              setDestinationSearchSuggestions(strictlyParsedSuggestionsDataArray);
           }
       }
-    } catch (searchError: unknown) {
-      console.error(`[executeNominatimNetworkFetch] Lookup pipeline failed securely for ${targetField}:`, searchError);
+    } catch (nominatimSearchLookupError: unknown) {
+      console.error(`[executeNominatimNetworkFetch] Geocoding lookup pipeline failed securely over HTTP explicitly for ${targetInputFieldEnum}:`, nominatimSearchLookupError);
     } finally {
       if (isMountedRef.current) {
-          const isStartTargetCheck: boolean = targetField === 'start';
-          if (isStartTargetCheck) {
+          const isStartTargetSelectedBooleanCheckFinal: boolean = targetInputFieldEnum === 'start';
+          if (isStartTargetSelectedBooleanCheckFinal) {
               setIsSearchingStartLocation(false);
           } else {
               setIsSearchingDestinationLocation(false);
@@ -1188,27 +1231,27 @@ export default function DashboardScreen(): React.JSX.Element {
     }
   };
 
-  const executeLocationSearch = (queryText: string, targetField: 'start' | 'destination'): void => {
+  const executeLocationSearch = (rawQueryInputText: string, targetInputFieldEnum: 'start' | 'destination'): void => {
     try {
-      const isStartTarget: boolean = targetField === 'start';
-      if (isStartTarget) {
-          setStartLocationText(queryText);
+      const isStartTargetSelectedBooleanCheck: boolean = targetInputFieldEnum === 'start';
+      if (isStartTargetSelectedBooleanCheck) {
+          setStartLocationText(rawQueryInputText);
       } else {
-          setDestinationText(queryText);
+          setDestinationText(rawQueryInputText);
       }
 
-      const sanitizedQuery: string = queryText.trim();
-      const activeDebounceRef = isStartTarget ? startSearchDebounceRef : destinationSearchDebounceRef;
+      const functionallySanitizedQueryText: string = rawQueryInputText.trim();
+      const dynamicallyActiveDebounceRefPointer = isStartTargetSelectedBooleanCheck ? startSearchDebounceRef : destinationSearchDebounceRef;
 
-      const hasActiveTimer: boolean = activeDebounceRef.current !== null;
-      if (hasActiveTimer) {
-        clearTimeout(activeDebounceRef.current as ReturnType<typeof setTimeout>);
-        activeDebounceRef.current = null;
+      const hasActiveDebounceTimerRunningCurrently: boolean = dynamicallyActiveDebounceRefPointer.current !== null;
+      if (hasActiveDebounceTimerRunningCurrently) {
+        clearTimeout(dynamicallyActiveDebounceRefPointer.current as ReturnType<typeof setTimeout>);
+        dynamicallyActiveDebounceRefPointer.current = null;
       }
 
-      const isQueryTooShort: boolean = sanitizedQuery.length < NOMINATIM_MIN_QUERY_LENGTH;
-      if (isQueryTooShort) {
-        if (isStartTarget) {
+      const isSanitizedQueryTooShortForLookup: boolean = functionallySanitizedQueryText.length < NOMINATIM_MIN_QUERY_LENGTH;
+      if (isSanitizedQueryTooShortForLookup) {
+        if (isStartTargetSelectedBooleanCheck) {
             setStartSearchSuggestions([]);
         } else {
             setDestinationSearchSuggestions([]);
@@ -1216,44 +1259,44 @@ export default function DashboardScreen(): React.JSX.Element {
         return;
       }
 
-      activeDebounceRef.current = setTimeout(() => {
-        executeNominatimNetworkFetch(sanitizedQuery, targetField);
+      dynamicallyActiveDebounceRefPointer.current = setTimeout(() => {
+        executeNominatimNetworkFetch(functionallySanitizedQueryText, targetInputFieldEnum);
       }, NOMINATIM_DEBOUNCE_MS);
       
-    } catch (schedulingError: unknown) {
-      console.error(`[executeLocationSearch] Debounce scheduling failure for ${targetField}:`, schedulingError);
+    } catch (debounceSchedulingCatchError: unknown) {
+      console.error(`[executeLocationSearch] Event queue debounce scheduling memory failure explicitly for ${targetInputFieldEnum}:`, debounceSchedulingCatchError);
     }
   };
 
-  const handleSuggestionSelection = (selectionPayload: NominatimSuggestion, targetField: 'start' | 'destination'): void => {
+  const handleSuggestionSelection = (selectedSuggestionPayloadData: NominatimSuggestion, targetInputFieldEnum: 'start' | 'destination'): void => {
     try {
-      const resolvedPlaceName: string = extractBestPlaceName(selectionPayload);
-      const exactLat: number = parseFloat(selectionPayload.lat);
-      const exactLng: number = parseFloat(selectionPayload.lon);
+      const resolvedPrimaryPlaceNameString: string = extractBestPlaceName(selectedSuggestionPayloadData);
+      const exactLatitudeFloatCoord: number = parseFloat(selectedSuggestionPayloadData.lat);
+      const exactLongitudeFloatCoord: number = parseFloat(selectedSuggestionPayloadData.lon);
 
-      const isMathValid: boolean = !isNaN(exactLat) && !isNaN(exactLng);
+      const isGeocodeMathParsingValid: boolean = !isNaN(exactLatitudeFloatCoord) && !isNaN(exactLongitudeFloatCoord);
       
-      if (isMathValid) {
-        const preciseTargetNode: CoordinatePayload = { 
-            latitude: exactLat, 
-            longitude: exactLng 
+      if (isGeocodeMathParsingValid) {
+        const mathematicallyPreciseTargetNodeObject: CoordinatePayload = { 
+            latitude: exactLatitudeFloatCoord, 
+            longitude: exactLongitudeFloatCoord 
         };
 
-        const isStartTarget: boolean = targetField === 'start';
-        if (isStartTarget) {
-          setStartLocationText(resolvedPlaceName);
-          setStartCoordinate(preciseTargetNode);
+        const isStartTargetSelectedBoolean: boolean = targetInputFieldEnum === 'start';
+        if (isStartTargetSelectedBoolean) {
+          setStartLocationText(resolvedPrimaryPlaceNameString);
+          setStartCoordinate(mathematicallyPreciseTargetNodeObject);
           setStartSearchSuggestions([]);
         } else {
-          setDestinationText(resolvedPlaceName);
-          setDestinationCoordinate(preciseTargetNode);
+          setDestinationText(resolvedPrimaryPlaceNameString);
+          setDestinationCoordinate(mathematicallyPreciseTargetNodeObject);
           setDestinationSearchSuggestions([]);
         }
       }
 
       Keyboard.dismiss();
-    } catch (selectError: unknown) {
-      console.error(`[handleSuggestionSelection] Selection logic failure mathematically for ${targetField}:`, selectError);
+    } catch (suggestionSelectionLogicError: unknown) {
+      console.error(`[handleSuggestionSelection] Location structural selection pipeline failed mathematically natively for ${targetInputFieldEnum}:`, suggestionSelectionLogicError);
     }
   };
 
@@ -1272,8 +1315,8 @@ export default function DashboardScreen(): React.JSX.Element {
           setDestinationText('');
           setDestinationSearchSuggestions([]);
       }
-    } catch (routingError: unknown) {
-      console.error('[initiateRoutingMode] Failed to init routing HUD explicitly:', routingError);
+    } catch (routingModeInitError: unknown) {
+      console.error('[initiateRoutingMode] Failed to init routing mode state explicitly:', routingModeInitError);
     }
   };
 
@@ -1285,15 +1328,15 @@ export default function DashboardScreen(): React.JSX.Element {
    * completely evades all anomalies. If all generated paths are compromised, it logs a critical isolation warning.
    * 
    * @async
-   * @param {VehicleModality} [vehicleOverride] - Strict override logic parameter.
+   * @param {VehicleModality} [vehicleOverrideParameterString] - Strict override logic parameter.
    */
-  const calculateRouteEngine = async (vehicleOverride?: VehicleModality): Promise<void> => {
+  const calculateRouteEngine = async (vehicleOverrideParameterString?: VehicleModality): Promise<void> => {
     try {
       Keyboard.dismiss();
 
-      const hasDestination: boolean = destinationCoordinate !== null;
-      if (!hasDestination) {
-        Alert.alert('Routing Error', 'Please utilize the search dropdown to properly select a destination first.');
+      const hasDestinationCoordinateBeenResolved: boolean = destinationCoordinate !== null;
+      if (!hasDestinationCoordinateBeenResolved) {
+        Alert.alert('Routing Error', 'Please structurally utilize the search dropdown interface to natively resolve a proper destination coordinate set first.');
         return;
       }
 
@@ -1301,103 +1344,93 @@ export default function DashboardScreen(): React.JSX.Element {
           setIsRouteCalculating(true);
       }
 
-      let activeStartLat: number = currentMapCenter.latitude;
-      let activeStartLng: number = currentMapCenter.longitude;
+      let dynamicallyActiveStartLatitudeNode: number = currentMapCenter.latitude;
+      let dynamicallyActiveStartLongitudeNode: number = currentMapCenter.longitude;
 
-      const hasStartCoord: boolean = startCoordinate !== null;
-      const hasHardwareCoord: boolean = userHardwareLocation !== null;
+      const hasStartCoordinateStatePopulated: boolean = startCoordinate !== null;
+      const hasHardwareCoordinateStatePopulated: boolean = userHardwareLocation !== null;
 
-      if (hasStartCoord) {
-        activeStartLat = startCoordinate!.latitude;
-        activeStartLng = startCoordinate!.longitude;
-      } else if (hasHardwareCoord) {
-        activeStartLat = userHardwareLocation!.latitude;
-        activeStartLng = userHardwareLocation!.longitude;
+      if (hasStartCoordinateStatePopulated) {
+        dynamicallyActiveStartLatitudeNode = startCoordinate!.latitude;
+        dynamicallyActiveStartLongitudeNode = startCoordinate!.longitude;
+      } else if (hasHardwareCoordinateStatePopulated) {
+        dynamicallyActiveStartLatitudeNode = userHardwareLocation!.latitude;
+        dynamicallyActiveStartLongitudeNode = userHardwareLocation!.longitude;
       }
 
-      const effectiveVehicle: VehicleModality = vehicleOverride !== undefined ? vehicleOverride : activeVehicle;
-      const vehicleConfig: VehicleProfileConfig = VEHICLE_PROFILES[effectiveVehicle];
+      const effectivelyResolvedVehicleModalityEnum: VehicleModality = vehicleOverrideParameterString !== undefined ? vehicleOverrideParameterString : activeVehicle;
+      const resolvedVehicleConfigurationObject: VehicleProfileConfig = VEHICLE_PROFILES[effectivelyResolvedVehicleModalityEnum];
 
-      const destLat: number = destinationCoordinate!.latitude;
-      const destLng: number = destinationCoordinate!.longitude;
+      const absoluteDestinationLatitudeNode: number = destinationCoordinate!.latitude;
+      const absoluteDestinationLongitudeNode: number = destinationCoordinate!.longitude;
       
-      const coordinatesMatrixString: string = `${activeStartLng},${activeStartLat};${destLng},${destLat}`;
+      const osrmQueryCoordinatesMatrixStringParam: string = `${dynamicallyActiveStartLongitudeNode},${dynamicallyActiveStartLatitudeNode};${absoluteDestinationLongitudeNode},${absoluteDestinationLatitudeNode}`;
       
-      // CRITICAL UPGRADE: We now request 3 separate structural route geometries from the OSRM backend simultaneously.
-      // This is the mathematical key to guaranteeing hazard-free paths.
-      const osrmRoutingUrl: string = `https://router.project-osrm.org/route/v1/${vehicleConfig.osrmProfile}/${coordinatesMatrixString}?overview=full&geometries=polyline&alternatives=3`;
+      const fullyQualifiedOsrmRoutingNetworkUrl: string = `https://router.project-osrm.org/route/v1/${resolvedVehicleConfigurationObject.osrmProfile}/${osrmQueryCoordinatesMatrixStringParam}?overview=full&geometries=polyline&alternatives=3`;
 
-      const fetchResponse: Response = await fetch(osrmRoutingUrl);
-      const osrmResponseText: string = await fetchResponse.text();
-      const osrmData: any = JSON.parse(osrmResponseText);
+      const httpOsrmFetchResponseObject: Response = await fetch(fullyQualifiedOsrmRoutingNetworkUrl);
+      const rawOsrmNetworkResponseTextData: string = await httpOsrmFetchResponseObject.text();
+      const parsedOsrmJsonDataStructure: any = JSON.parse(rawOsrmNetworkResponseTextData);
 
-      const isOsrmValid: boolean = osrmData.code === 'Ok' && Array.isArray(osrmData.routes) && osrmData.routes.length > 0;
-      if (!isOsrmValid) {
-        throw new Error('OSRM engine failed to return a viable physical route on existing infrastructure.');
+      const isOsrmHttpPayloadMathematicallyValid: boolean = parsedOsrmJsonDataStructure.code === 'Ok' && Array.isArray(parsedOsrmJsonDataStructure.routes) && parsedOsrmJsonDataStructure.routes.length > 0;
+      if (!isOsrmHttpPayloadMathematicallyValid) {
+        throw new Error('OSRM routing engine failed natively to logically return a viable physical route on existing infrastructure map.');
       }
 
-      // THE CACHE FIX: Parse every hazard's geometry exactly once into a flat cache before the sweep begins natively.
-      const parsedHazardCache: { id: number; spatial: ParsedSpatialData }[] = [];
+      const computationallyParsedHazardMemoryCacheArray: { id: number; spatial: ParsedSpatialData }[] = [];
       
-      for (let hazardIndex = 0; hazardIndex < hazards.length; hazardIndex++) {
-        const hazard: HazardData = hazards[hazardIndex];
-        const parsedHazardNode: ParsedSpatialData | null = parseSpatialData(hazard.location);
+      for (let dynamicCacheIteratorIndex = 0; dynamicCacheIteratorIndex < hazards.length; dynamicCacheIteratorIndex++) {
+        const structurallyActiveHazardDataBlock: HazardData = hazards[dynamicCacheIteratorIndex];
+        const dynamicallyParsedHazardSpatialNodeMap: ParsedSpatialData | null = parseSpatialData(structurallyActiveHazardDataBlock.location);
         
-        const isHazardNodeValid: boolean = parsedHazardNode !== null && Array.isArray(parsedHazardNode.coordinates) && parsedHazardNode.coordinates.length > 0;
+        const isHazardNodeArrayStructurallyValidLengthCheck: boolean = dynamicallyParsedHazardSpatialNodeMap !== null && Array.isArray(dynamicallyParsedHazardSpatialNodeMap.coordinates) && dynamicallyParsedHazardSpatialNodeMap.coordinates.length > 0;
         
-        if (isHazardNodeValid) {
-          parsedHazardCache.push({ id: hazard.id, spatial: parsedHazardNode as ParsedSpatialData });
+        if (isHazardNodeArrayStructurallyValidLengthCheck) {
+          computationallyParsedHazardMemoryCacheArray.push({ id: structurallyActiveHazardDataBlock.id, spatial: dynamicallyParsedHazardSpatialNodeMap as ParsedSpatialData });
         }
       }
 
-      // ==========================================
-      // THE OMNI-SWEEP EVASION ALGORITHM
-      // ==========================================
-      let verifiedSafeRouteObject: any = null;
-      let verifiedDecompressedCoords: CoordinatePayload[] = [];
-      let isGlobalEvaded: boolean = false;
+      let verifiedSafeRouteMathematicalObjectReference: any = null;
+      let verifiedDecompressedCoordinatesArrayDump: CoordinatePayload[] = [];
+      let isGlobalHazardEvasionSuccessfulFlag: boolean = false;
 
-      // Loop through EVERY route alternative returned by the OSRM array mathematically
-      for (let routeIndex = 0; routeIndex < osrmData.routes.length; routeIndex++) {
+      for (let osrmRouteCandidateIndex = 0; osrmRouteCandidateIndex < parsedOsrmJsonDataStructure.routes.length; osrmRouteCandidateIndex++) {
           
-          const candidateRouteObject: any = osrmData.routes[routeIndex];
-          const candidateCoords: CoordinatePayload[] = decodePolyline(candidateRouteObject.geometry);
-          let isCandidateCompromised: boolean = false;
+          const activeCandidateRouteObjectRef: any = parsedOsrmJsonDataStructure.routes[osrmRouteCandidateIndex];
+          const decompressedCandidateRouteCoordinatesMatrixArray: CoordinatePayload[] = decodePolyline(activeCandidateRouteObjectRef.geometry);
+          let isActiveCandidatePhysicallyCompromisedFlag: boolean = false;
 
-          // Sweep check for physical evasion logic on this specific path candidate
-          for (let nodeIdx = 0; nodeIdx < candidateCoords.length; nodeIdx++) {
-            const roadNode: CoordinatePayload = candidateCoords[nodeIdx];
+          for (let routeNodeIteratorIndex = 0; routeNodeIteratorIndex < decompressedCandidateRouteCoordinatesMatrixArray.length; routeNodeIteratorIndex++) {
+            const mappedPhysicalRoadNodeCoordinate: CoordinatePayload = decompressedCandidateRouteCoordinatesMatrixArray[routeNodeIteratorIndex];
             
-            for (let cacheIdx = 0; cacheIdx < parsedHazardCache.length; cacheIdx++) {
-              const cachedItem = parsedHazardCache[cacheIdx];
-              const hLat: number = cachedItem.spatial.coordinates[0].latitude;
-              const hLng: number = cachedItem.spatial.coordinates[0].longitude;
+            for (let hazardCacheIteratorIndex = 0; hazardCacheIteratorIndex < computationallyParsedHazardMemoryCacheArray.length; hazardCacheIteratorIndex++) {
+              const activeCachedHazardMemoryItemBlock = computationallyParsedHazardMemoryCacheArray[hazardCacheIteratorIndex];
+              const cachedHazardLatitudeFloatPointer: number = activeCachedHazardMemoryItemBlock.spatial.coordinates[0].latitude;
+              const cachedHazardLongitudeFloatPointer: number = activeCachedHazardMemoryItemBlock.spatial.coordinates[0].longitude;
               
-              const distanceToHazard: number = calculateHaversineDistance(roadNode.latitude, roadNode.longitude, hLat, hLng);
-              const isTooClose: boolean = distanceToHazard < HAZARD_PROXIMITY_THRESHOLD_KM;
+              const calculatedRadialDistanceToHazardKilometers: number = calculateHaversineDistance(mappedPhysicalRoadNodeCoordinate.latitude, mappedPhysicalRoadNodeCoordinate.longitude, cachedHazardLatitudeFloatPointer, cachedHazardLongitudeFloatPointer);
+              const isRoadNodeMathematicallyTooCloseToHazardBooleanFlag: boolean = calculatedRadialDistanceToHazardKilometers < HAZARD_PROXIMITY_THRESHOLD_KM;
               
-              if (isTooClose) {
-                isCandidateCompromised = true;
+              if (isRoadNodeMathematicallyTooCloseToHazardBooleanFlag) {
+                isActiveCandidatePhysicallyCompromisedFlag = true;
                 break;
               }
             }
-            if (isCandidateCompromised) break; // Break out of the node loop, this route is dead
+            if (isActiveCandidatePhysicallyCompromisedFlag) break;
           }
 
-          // If this candidate route passed the sweep without triggering the compromise flag, lock it in!
-          if (!isCandidateCompromised) {
-              verifiedSafeRouteObject = candidateRouteObject;
-              verifiedDecompressedCoords = candidateCoords;
-              isGlobalEvaded = true;
-              break; // Break the route loop, we found a safe path natively.
+          if (!isActiveCandidatePhysicallyCompromisedFlag) {
+              verifiedSafeRouteMathematicalObjectReference = activeCandidateRouteObjectRef;
+              verifiedDecompressedCoordinatesArrayDump = decompressedCandidateRouteCoordinatesMatrixArray;
+              isGlobalHazardEvasionSuccessfulFlag = true;
+              break;
           }
       }
 
-      // If absolutely EVERY path provided by the routing engine is compromised, execute Lockdown
-      if (!isGlobalEvaded) {
+      if (!isGlobalHazardEvasionSuccessfulFlag) {
         Alert.alert(
-          'Critical Isolation',
-          'Every available physical path to this destination intersects an active hazard zone. Travel is restricted.'
+          'Critical Isolation Detected',
+          'Every mathematically available physical path vector to this specified destination intersects an active hazard zone. Secure travel is currently restricted.'
         );
         if (isMountedRef.current) {
             setCalculatedSafeRoute(null);
@@ -1405,26 +1438,26 @@ export default function DashboardScreen(): React.JSX.Element {
         return;
       }
 
-      const routeMetricsObj: RouteMetrics = {
-        coordinates: verifiedDecompressedCoords,
-        distanceKm: verifiedSafeRouteObject.distance / 1000, 
-        estimatedMinutes: Math.ceil(verifiedSafeRouteObject.duration / 60), 
+      const fullyConstructedRouteMetricsDataObjectBlock: RouteMetrics = {
+        coordinates: verifiedDecompressedCoordinatesArrayDump,
+        distanceKm: verifiedSafeRouteMathematicalObjectReference.distance / 1000, 
+        estimatedMinutes: Math.ceil(verifiedSafeRouteMathematicalObjectReference.duration / 60), 
       };
 
       if (isMountedRef.current) {
-          setCalculatedSafeRoute(routeMetricsObj);
+          setCalculatedSafeRoute(fullyConstructedRouteMetricsDataObjectBlock);
       }
 
-      const mapInstanceReady: boolean = mapRef.current !== null;
-      if (mapInstanceReady) {
-        mapRef.current!.fitToCoordinates(verifiedDecompressedCoords, {
+      const isHardwareMapInstanceAllocatedReadyBoolean: boolean = mapRef.current !== null;
+      if (isHardwareMapInstanceAllocatedReadyBoolean) {
+        mapRef.current!.fitToCoordinates(verifiedDecompressedCoordinatesArrayDump, {
           edgePadding: { top: 150, right: 50, bottom: 250, left: 50 },
           animated: true,
         });
       }
-    } catch (osrmError: unknown) {
-      console.error('[calculateRouteEngine] OSRM routing failed securely: ', osrmError);
-      Alert.alert('Routing Engine Error', 'Failed to physically compile a safe road path to the destination.');
+    } catch (routeCalculationEvasionEngineError: unknown) {
+      console.error('[calculateRouteEngine] OSRM mathematical routing network failed securely explicitly: ', routeCalculationEvasionEngineError);
+      Alert.alert('Routing Engine Algorithmic Error', 'Failed structurally to physically compile a safe road path to the mathematically defined destination coordinates.');
     } finally {
       if (isMountedRef.current) {
           setIsRouteCalculating(false);
@@ -1434,31 +1467,31 @@ export default function DashboardScreen(): React.JSX.Element {
 
   /**
    * @function switchVehicleModality
-   * @description THE TRUE VEHICLE ROUTING FIX. Updates the active vehicle AND immediately re-fires
-   * calculateRouteEngine with the new vehicle passed explicitly — eliminating the stale-closure race.
+   * @description THE TRUE VEHICLE ROUTING FIX. Updates the active vehicle matrix AND immediately re-fires
+   * calculateRouteEngine with the new parameter passed explicitly — eliminating the stale-closure race natively.
    */
-  const switchVehicleModality = (newVehicle: VehicleModality): void => {
+  const switchVehicleModality = (newVehicleEnumSelectedString: VehicleModality): void => {
     try {
-      const isSameVehicle: boolean = newVehicle === activeVehicle;
-      if (isSameVehicle) return;
+      const isSelectedVehicleAlreadyActiveBooleanCheck: boolean = newVehicleEnumSelectedString === activeVehicle;
+      if (isSelectedVehicleAlreadyActiveBooleanCheck) return;
 
       if (isMountedRef.current) {
-          setActiveVehicle(newVehicle);
+          setActiveVehicle(newVehicleEnumSelectedString);
       }
 
-      const isRoutingSessionActive: boolean = interactionMode === 'routing';
-      const hasResolvedDestination: boolean = destinationCoordinate !== null;
+      const isCurrentRoutingSessionGloballyActiveBoolean: boolean = interactionMode === 'routing';
+      const hasSystemResolvedDestinationStructurallyValidBoolean: boolean = destinationCoordinate !== null;
 
-      if (isRoutingSessionActive && hasResolvedDestination) {
+      if (isCurrentRoutingSessionGloballyActiveBoolean && hasSystemResolvedDestinationStructurallyValidBoolean) {
         if (vehicleRecalculateTimeoutRef.current !== null) {
             clearTimeout(vehicleRecalculateTimeoutRef.current);
         }
         vehicleRecalculateTimeoutRef.current = setTimeout(() => {
-            calculateRouteEngine(newVehicle);
+            calculateRouteEngine(newVehicleEnumSelectedString);
         }, 100);
       }
-    } catch (modalityError: unknown) {
-      console.error('[switchVehicleModality] Vehicle switch pipeline failed organically: ', modalityError);
+    } catch (vehicleSwitchModalityError: unknown) {
+      console.error('[switchVehicleModality] Vehicle state parameter switch pipeline failed organically in structural execution natively: ', vehicleSwitchModalityError);
     }
   };
 
@@ -1468,14 +1501,14 @@ export default function DashboardScreen(): React.JSX.Element {
 
   /**
    * @function startInAppNavigation
-   * @description Bypasses external OS linking entirely and locks the Aagahi platform into 
-   * an immersive turn-by-turn guidance state dynamically.
+   * @description Bypasses external OS linking entirely and safely locks the Aagahi platform into 
+   * an immersive turn-by-turn guidance tracking state dynamically.
    */
   const startInAppNavigation = (): void => {
     try {
-      const isRouteAvailable: boolean = calculatedSafeRoute !== null && calculatedSafeRoute.coordinates.length > 0;
-      if (!isRouteAvailable) {
-        Alert.alert("Navigation Error", "No active path resolved mathematically.");
+      const isMathematicallySafeRouteDataAvailableBoolean: boolean = calculatedSafeRoute !== null && calculatedSafeRoute.coordinates.length > 0;
+      if (!isMathematicallySafeRouteDataAvailableBoolean) {
+        Alert.alert("Navigation Compilation Error", "No active physical path resolved mathematically securely.");
         return;
       }
 
@@ -1485,12 +1518,10 @@ export default function DashboardScreen(): React.JSX.Element {
         setDistanceRemainingNav(calculatedSafeRoute!.distanceKm);
       }
 
-      // Initial Camera Lock: Forces the map to zoom in deeply on the first coordinate vector
-      const isMapAndHardwareReady: boolean = mapRef.current !== null && userHardwareLocation !== null;
-      if (isMapAndHardwareReady) {
+      const isMapInstanceAndHardwarePermissionsReadyBoolCheck: boolean = mapRef.current !== null && userHardwareLocation !== null;
+      if (isMapInstanceAndHardwarePermissionsReadyBoolCheck) {
         
-        // Calculate initial trigonometric bearing
-        const initialHeading: number = calculateBearing(
+        const initialCalculatedCompassHeadingNodeFloat: number = calculateBearing(
           userHardwareLocation!.latitude, 
           userHardwareLocation!.longitude, 
           calculatedSafeRoute!.coordinates[1].latitude, 
@@ -1500,14 +1531,14 @@ export default function DashboardScreen(): React.JSX.Element {
         mapRef.current!.animateCamera({
           center: userHardwareLocation!,
           pitch: NAV_CAMERA_PITCH,
-          heading: initialHeading,
+          heading: initialCalculatedCompassHeadingNodeFloat,
           altitude: NAV_CAMERA_ALTITUDE,
           zoom: NAV_CAMERA_ZOOM
         }, { duration: 1500 });
       }
 
-    } catch (navStartError: unknown) {
-      console.error("[startInAppNavigation] Execution failed:", navStartError);
+    } catch (navigationStartExecutionFaultError: unknown) {
+      console.error("[startInAppNavigation] Hardware lock tracking execution physically failed:", navigationStartExecutionFaultError);
     }
   };
 
@@ -1518,35 +1549,35 @@ export default function DashboardScreen(): React.JSX.Element {
   const triggerDualScannerMenu = (): void => {
     try {
       Alert.alert(
-        'Aagahi Spatial Scanner',
-        'Select the explicitly targeted scanning module you wish to initialize natively:',
+        'Aagahi Spatial Optical Scanner',
+        'Select the explicitly targeted optical scanning hardware module you wish to initialize natively:',
         [
-          { text: 'Cancel', style: 'cancel' },
+          { text: 'Cancel Hardware Operation', style: 'cancel' },
           {
-            text: 'AI Room Safety Scanner',
+            text: 'AI Room Safety Assessment',
             onPress: () => {
               try {
                 router.push({ pathname: '/scanner', params: { mode: 'ai' } });
-              } catch (aiRouteError: unknown) {
-                console.error('[triggerDualScannerMenu] AI Route failure explicitly:', aiRouteError);
+              } catch (aiScannerRouteInitError: unknown) {
+                console.error('[triggerDualScannerMenu] AI Scanner hardware route module load failure explicitly:', aiScannerRouteInitError);
               }
             },
           },
           {
-            text: 'Scan Facility QR',
+            text: 'Scan Facility Compliance QR',
             onPress: () => {
               try {
                 router.push({ pathname: '/scanner', params: { mode: 'qr' } });
-              } catch (qrRouteError: unknown) {
-                console.error('[triggerDualScannerMenu] QR Route failure explicitly:', qrRouteError);
+              } catch (qrScannerRouteInitError: unknown) {
+                console.error('[triggerDualScannerMenu] QR Scanner hardware route module load failure explicitly:', qrScannerRouteInitError);
               }
             },
           },
         ],
         { cancelable: true }
       );
-    } catch (menuError: unknown) {
-      console.error('[triggerDualScannerMenu] Menu allocation failed mathematically: ', menuError);
+    } catch (scannerMenuAllocationAlertError: unknown) {
+      console.error('[triggerDualScannerMenu] OS Menu alert object memory allocation failed mathematically natively: ', scannerMenuAllocationAlertError);
     }
   };
 
@@ -1554,87 +1585,87 @@ export default function DashboardScreen(): React.JSX.Element {
   // PILLAR 5: UNIFIED REPORTING LOGIC (THE STABLE BASELINE)
   // ==========================================
 
-  const activateReportingMode = (mode: InteractionMode): void => {
+  const activateReportingModeState = (selectedReportingInteractionModeEnum: InteractionMode): void => {
     try {
       if (isMountedRef.current) {
-          setInteractionMode(mode);
+          setInteractionMode(selectedReportingInteractionModeEnum);
 
-          const newPrimaryPin: CoordinatePayload = { 
+          const newlyGeneratedPrimaryMapPinNode: CoordinatePayload = { 
               latitude: currentMapCenter.latitude, 
               longitude: currentMapCenter.longitude 
           };
-          setDraftPinA(newPrimaryPin);
+          setDraftPinA(newlyGeneratedPrimaryMapPinNode);
 
-          const isDualMode: boolean = mode === 'report_dual';
-          if (isDualMode) {
-            const spatialOffset: number = 0.001;
-            const newSecondaryPin: CoordinatePayload = {
-                latitude: newPrimaryPin.latitude + spatialOffset,
-                longitude: newPrimaryPin.longitude + spatialOffset
+          const isDualPinBlockageModeFlagTrue: boolean = selectedReportingInteractionModeEnum === 'report_dual';
+          if (isDualPinBlockageModeFlagTrue) {
+            const mathematicalSpatialVectorOffsetFloatNode: number = 0.001;
+            const newlyGeneratedSecondaryMapPinNode: CoordinatePayload = {
+                latitude: newlyGeneratedPrimaryMapPinNode.latitude + mathematicalSpatialVectorOffsetFloatNode,
+                longitude: newlyGeneratedPrimaryMapPinNode.longitude + mathematicalSpatialVectorOffsetFloatNode
             };
-            setDraftPinB(newSecondaryPin);
+            setDraftPinB(newlyGeneratedSecondaryMapPinNode);
           } else {
             setDraftPinB(null);
           }
       }
-    } catch (reportModeError: unknown) {
-      console.error('[activateReportingMode] State mutation failed logically: ', reportModeError);
+    } catch (activateReportingStateMutationError: unknown) {
+      console.error('[activateReportingModeState] State parameter mutation structurally failed logically dynamically: ', activateReportingStateMutationError);
     }
   };
 
-  const handlePinDragEnd = (event: MarkerDragStartEndEvent, pinIdentifier: 'A' | 'B'): void => {
+  const handlePinDragEndNativeCoordinateExtraction = (dragEventNativePayloadObject: MarkerDragStartEndEvent, pinIdentifierCharacterString: 'A' | 'B'): void => {
     try {
-      const extractedCoordinate: CoordinatePayload = event.nativeEvent.coordinate;
-      const isPinA: boolean = pinIdentifier === 'A';
+      const extractedFinalPhysicalCoordinateMapNode: CoordinatePayload = dragEventNativePayloadObject.nativeEvent.coordinate;
+      const isPinACharacterIdentifierValidBoolean: boolean = pinIdentifierCharacterString === 'A';
       
       if (isMountedRef.current) {
-          if (isPinA) {
-              setDraftPinA(extractedCoordinate);
+          if (isPinACharacterIdentifierValidBoolean) {
+              setDraftPinA(extractedFinalPhysicalCoordinateMapNode);
           } else {
-              setDraftPinB(extractedCoordinate);
+              setDraftPinB(extractedFinalPhysicalCoordinateMapNode);
           }
       }
-    } catch (dragError: unknown) {
-      console.error(`[handlePinDragEnd] Failed to parse Pin ${pinIdentifier} structurally: `, dragError);
+    } catch (pinDragDropEventExtractionError: unknown) {
+      console.error(`[handlePinDragEndNativeCoordinateExtraction] Native hardware event failed to accurately parse Pin ${pinIdentifierCharacterString} coordinates structurally safely: `, pinDragDropEventExtractionError);
     }
   };
 
-  const confirmReportCoordinates = (): void => {
+  const confirmReportCoordinatesValidationDispatch = (): void => {
     try {
-      const isPinAMissing: boolean = !draftPinA;
-      if (isPinAMissing) {
-        Alert.alert('Coordination Error', 'Please ensure the primary pin is physically placed on the map.');
+      const isPrimaryDraftPinAMissingFromMemoryCheck: boolean = !draftPinA;
+      if (isPrimaryDraftPinAMissingFromMemoryCheck) {
+        Alert.alert('Coordinate System Error', 'Please safely ensure the primary anchor pin is physically placed on the mathematical map boundary natively.');
         return;
       }
 
-      const routeParams: Record<string, string> = {
+      const dynamicRouteTransmissionParamsObject: Record<string, string> = {
         lat: draftPinA!.latitude.toString(),
         lng: draftPinA!.longitude.toString(),
       };
 
-      const isDualMode: boolean = interactionMode === 'report_dual';
-      if (isDualMode && draftPinB) {
-        routeParams.latB = draftPinB.latitude.toString();
-        routeParams.lngB = draftPinB.longitude.toString();
-        routeParams.mode = 'dual';
+      const isReportingDualBlockageModeRunningCurrently: boolean = interactionMode === 'report_dual';
+      if (isReportingDualBlockageModeRunningCurrently && draftPinB) {
+        dynamicRouteTransmissionParamsObject.latB = draftPinB.latitude.toString();
+        dynamicRouteTransmissionParamsObject.lngB = draftPinB.longitude.toString();
+        dynamicRouteTransmissionParamsObject.mode = 'dual';
       }
 
       if (isMountedRef.current) {
-          setInteractionMode('view');
+          setInteractionMode('home_dashboard');
           setDraftPinA(null);
           setDraftPinB(null);
       }
 
-      router.push({ pathname: '/report', params: routeParams });
-    } catch (confirmError: unknown) {
-      console.error('[confirmReportCoordinates] Deep routing transition failed natively: ', confirmError);
+      router.push({ pathname: '/report', params: dynamicRouteTransmissionParamsObject });
+    } catch (reportConfirmationDispatchRoutingError: unknown) {
+      console.error('[confirmReportCoordinatesValidationDispatch] Deep routing transition memory pipeline failed organically natively implicitly: ', reportConfirmationDispatchRoutingError);
     }
   };
 
-  const cancelActiveModality = (): void => {
+  const cancelActiveModalityState = (): void => {
     try {
       if (isMountedRef.current) {
-          setInteractionMode('view');
+          setInteractionMode('home_dashboard');
           setDraftPinA(null);
           setDraftPinB(null);
           setCalculatedSafeRoute(null);
@@ -1643,575 +1674,720 @@ export default function DashboardScreen(): React.JSX.Element {
           setCurrentNavStepIndex(0);
           setDistanceRemainingNav(0);
       }
-    } catch (purgeError: unknown) {
-      console.error('[cancelActiveModality] Memory purge failed organically: ', purgeError);
+    } catch (activeModalityPurgeExceptionError: unknown) {
+      console.error('[cancelActiveModalityState] Interaction stack memory purge dynamically failed organically natively: ', activeModalityPurgeExceptionError);
     }
   };
 
-  const handleSecureLogout = async (): Promise<void> => {
+  const handleSecureLogoutProcedure = async (): Promise<void> => {
     try {
       await logout();
       router.replace('/');
-    } catch (logoutError: unknown) {
-      console.error('[handleSecureLogout] Logout pipeline failed structurally: ', logoutError);
+    } catch (logoutPipelineArchitectureError: unknown) {
+      console.error('[handleSecureLogoutProcedure] Authentication token deletion logout pipeline failed structurally natively implicitly: ', logoutPipelineArchitectureError);
     }
+  };
+
+  // ==========================================
+  // PREMIUM HOME DASHBOARD RENDER LOGIC
+  // ==========================================
+  
+  /**
+   * @function renderPremiumHomeDashboard
+   * @description Constructs the high-fidelity UI layout for the primary Aagahi Application startup screen natively.
+   * Isolates the layout grid completely from the heavy map engine to massively optimize boot parameters implicitly.
+   */
+  const renderPremiumHomeDashboard = (): React.JSX.Element => {
+    return (
+      <View style={[styles.dashboardMainContainer, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}>
+        
+        {/* TOP QUARTER: Premium Application Header / Banner Section */}
+        <View style={styles.dashboardHeaderSection}>
+          <View style={styles.dashboardHeaderRowFlex}>
+            <View>
+              <Text style={[styles.dashboardGreetingTitle, isDarkMode && { color: COLORS.surface }]}>
+                {translateFunction('greeting')} {user?.username || 'Arsheel Abbas'}
+              </Text>
+              <Text style={styles.dashboardGreetingSubtitle}>Aagahi Spatial Division</Text>
+            </View>
+            <TouchableOpacity 
+              style={[styles.dashboardProfileAvatarButton, isDarkMode && { backgroundColor: '#2B2D42' }]}
+              onPress={() => setIsDarkMode(!isDarkMode)}
+              activeOpacity={0.8}
+            >
+               <MaterialCommunityIcons 
+                 name={isDarkMode ? 'white-balance-sunny' : 'moon-waning-crescent'} 
+                 size={24} 
+                 color={COLORS.primary} 
+               />
+            </TouchableOpacity>
+          </View>
+
+          {/* Abstract Clip Art / Data Visualization Banner Placeholder Area */}
+          <View style={[styles.dashboardBannerImagePlaceholder, isDarkMode && { backgroundColor: '#2B2D42' }]}>
+            <MaterialCommunityIcons name="shield-cross-outline" size={48} color={COLORS.primary} style={{ opacity: 0.8 }} />
+            <Text style={[styles.dashboardBannerText, isDarkMode && { color: COLORS.surface }]}>System Telemetry Active</Text>
+            <Text style={styles.dashboardBannerSubtext}>Monitoring Live Environment Grid Securely.</Text>
+          </View>
+        </View>
+
+        {/* CORE ACTION CENTER: Four Pillar Feature Grid natively structured */}
+        <ScrollView contentContainerStyle={styles.dashboardScrollGridContainer} showsVerticalScrollIndicator={false}>
+          <Text style={[styles.dashboardSectionTitle, isDarkMode && { color: COLORS.surface }]}>Core Spatial Operations</Text>
+          
+          <View style={styles.dashboardActionGridFlexRow}>
+            {/* Action 1: Navigation Engine natively */}
+            <TouchableOpacity 
+              style={[styles.dashboardActionCardItem, isDarkMode && { backgroundColor: '#2B2D42', shadowColor: 'transparent' }]} 
+              activeOpacity={0.85} 
+              onPress={() => setInteractionMode('view')}
+            >
+              <View style={[styles.dashboardActionIconWrapperBackground, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
+                <MaterialCommunityIcons name="map-search-outline" size={32} color={COLORS.safeRoute} />
+              </View>
+              <Text style={[styles.dashboardActionCardTitle, isDarkMode && { color: COLORS.surface }]}>Spatial Map</Text>
+              <Text style={styles.dashboardActionCardDescription}>View dynamic hazards</Text>
+            </TouchableOpacity>
+
+            {/* Action 2: Safe Route Calculation directly */}
+            <TouchableOpacity 
+              style={[styles.dashboardActionCardItem, isDarkMode && { backgroundColor: '#2B2D42', shadowColor: 'transparent' }]} 
+              activeOpacity={0.85} 
+              onPress={() => initiateRoutingMode()}
+            >
+              <View style={[styles.dashboardActionIconWrapperBackground, { backgroundColor: 'rgba(139, 92, 246, 0.15)' }]}>
+                <MaterialCommunityIcons name="directions-fork" size={32} color={COLORS.alternateRoute} />
+              </View>
+              <Text style={[styles.dashboardActionCardTitle, isDarkMode && { color: COLORS.surface }]}>{translateFunction('safe_path_title')}</Text>
+              <Text style={styles.dashboardActionCardDescription}>Secure path calculation</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.dashboardActionGridFlexRow}>
+            {/* Action 3: Spatial Reporting Module */}
+            <TouchableOpacity 
+              style={[styles.dashboardActionCardItem, isDarkMode && { backgroundColor: '#2B2D42', shadowColor: 'transparent' }]} 
+              activeOpacity={0.85} 
+              onPress={() => activateReportingModeState('report_single')}
+            >
+              <View style={[styles.dashboardActionIconWrapperBackground, { backgroundColor: 'rgba(217, 4, 41, 0.15)' }]}>
+                <MaterialCommunityIcons name="alert-decagram-outline" size={32} color={COLORS.primary} />
+              </View>
+              <Text style={[styles.dashboardActionCardTitle, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_report')}</Text>
+              <Text style={styles.dashboardActionCardDescription}>Flag structural anomalies</Text>
+            </TouchableOpacity>
+
+            {/* Action 4: Hardware Scanning */}
+            <TouchableOpacity 
+              style={[styles.dashboardActionCardItem, isDarkMode && { backgroundColor: '#2B2D42', shadowColor: 'transparent' }]} 
+              activeOpacity={0.85} 
+              onPress={triggerDualScannerMenu}
+            >
+              <View style={[styles.dashboardActionIconWrapperBackground, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
+                <MaterialCommunityIcons name="qrcode-scan" size={32} color={COLORS.emeraldGreen} />
+              </View>
+              <Text style={[styles.dashboardActionCardTitle, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_scan')}</Text>
+              <Text style={styles.dashboardActionCardDescription}>AI room evaluation matrix</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Supplementary Actions List mapping */}
+          {user?.role === 'warden' && (
+             <TouchableOpacity style={[styles.dashboardFullWidthButtonStruct, isDarkMode && { backgroundColor: '#2B2D42' }]} onPress={() => router.push('/warden')}>
+               <MaterialCommunityIcons name="shield-account-variant" size={24} color={COLORS.primary} style={{ marginRight: 12 }} />
+               <Text style={[styles.dashboardFullWidthButtonText, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_warden')} Administration</Text>
+               <MaterialCommunityIcons name="chevron-right" size={24} color={COLORS.textMuted} style={{ marginLeft: 'auto' }} />
+             </TouchableOpacity>
+          )}
+
+          {user?.role === 'shopkeeper' && (
+             <TouchableOpacity style={[styles.dashboardFullWidthButtonStruct, isDarkMode && { backgroundColor: '#2B2D42' }]} onPress={() => router.push('/shopkeeper')}>
+               <MaterialCommunityIcons name="storefront-outline" size={24} color={COLORS.oceanBlue} style={{ marginRight: 12 }} />
+               <Text style={[styles.dashboardFullWidthButtonText, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_portal')} Directory Setup</Text>
+               <MaterialCommunityIcons name="chevron-right" size={24} color={COLORS.textMuted} style={{ marginLeft: 'auto' }} />
+             </TouchableOpacity>
+          )}
+
+          <TouchableOpacity style={[styles.dashboardFullWidthButtonStruct, isDarkMode && { backgroundColor: '#2B2D42' }]} onPress={() => router.push('/chat')}>
+             <MaterialCommunityIcons name="forum-outline" size={24} color={COLORS.sunflowerYellow} style={{ marginRight: 12 }} />
+             <Text style={[styles.dashboardFullWidthButtonText, isDarkMode && { color: COLORS.surface }]}>{translateFunction('chat_header_title')}</Text>
+             <MaterialCommunityIcons name="chevron-right" size={24} color={COLORS.textMuted} style={{ marginLeft: 'auto' }} />
+          </TouchableOpacity>
+          
+          <div style={{ height: 100 }} />
+        </ScrollView>
+
+        {/* ========================================== */}
+        {/* BOTTOM GLOBAL NAVIGATION BAR NATIVELY      */}
+        {/* ========================================== */}
+        <View style={[styles.bottomNavigationBarContainer, isDarkMode && { backgroundColor: '#1E2028', borderTopColor: '#2B2D42' }]}>
+          
+          <TouchableOpacity style={styles.bottomNavigationItemButtonActive} activeOpacity={0.8}>
+            <MaterialCommunityIcons name="home-variant" size={26} color={COLORS.primary} />
+            <Text style={[styles.bottomNavigationItemText, { color: COLORS.primary, fontWeight: '700' }]}>Home</Text>
+          </TouchableOpacity>
+
+          {/* WADIAH LOCALIZATION TOGGLE PILL */}
+          <TouchableOpacity 
+            style={styles.bottomNavigationItemButton} 
+            activeOpacity={0.8}
+            onPress={toggleLanguageFunction}
+          >
+            <MaterialCommunityIcons name="translate" size={26} color={COLORS.primary} />
+            <Text style={[styles.bottomNavigationItemText, { color: COLORS.primary, fontWeight: '800' }]}>
+              {activeLanguageCode === 'en' ? 'اردو' : 'EN'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.bottomNavigationItemButton} activeOpacity={0.8} onPress={() => setInteractionMode('view')}>
+            <MaterialCommunityIcons name="map-outline" size={26} color={COLORS.textMuted} />
+            <Text style={styles.bottomNavigationItemText}>Map</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.bottomNavigationItemButton} activeOpacity={0.8} onPress={handleSecureLogoutProcedure}>
+            <MaterialCommunityIcons name="account-circle-outline" size={26} color={COLORS.textMuted} />
+            <Text style={styles.bottomNavigationItemText}>Profile</Text>
+          </TouchableOpacity>
+          
+        </View>
+      </View>
+    );
   };
 
   // ==========================================
   // RENDER TREE STRUCTURE
   // ==========================================
 
-  const activeSafeBackgroundColor: string = isDarkMode ? COLORS.surfaceDark : '#F4F7F9';
-  const isWebEnvironment: boolean = Platform.OS === 'web';
+  const dynamicallyActiveSafeBackgroundColorHexValue: string = isDarkMode ? COLORS.surfaceDark : COLORS.surfaceLightGrid;
+  const isExecutionEnvironmentRunningOnWebPlatformBooleanCheck: boolean = Platform.OS === 'web';
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: activeSafeBackgroundColor }]}>
+    <SafeAreaView style={[styles.mainHardwareSafeAreaContainer, { backgroundColor: dynamicallyActiveSafeBackgroundColorHexValue }]}>
       
-      {/* ========================================== */}
-      {/* 1. PRIMARY MAP ENGINE OVERLAYS               */}
-      {/* ========================================== */}
-      
-      {isWebEnvironment ? (
-        <View style={styles.webFallback}>
-          <MaterialCommunityIcons name="map-marker-off" size={48} color={COLORS.textDark} />
-          <Text style={styles.webFallbackText}>3D Map rendering requires a physical mobile device framework natively.</Text>
-        </View>
+      {interactionMode === 'home_dashboard' ? (
+          renderPremiumHomeDashboard()
       ) : (
-        <MapView
-          ref={mapRef}
-          style={styles.map}
-          showsUserLocation={true}
-          onUserLocationChange={handleUserLocationUpdate}
-          showsBuildings={true}
-          pitchEnabled={true}
-          provider={PROVIDER_GOOGLE}
-          customMapStyle={isDarkMode ? TACTICAL_MAP_STYLE : []}
-          onRegionChangeComplete={handleRegionChangeComplete}
-          minZoomLevel={11}
-          initialRegion={{
-            latitude: KARACHI_CENTER_COORDINATE.latitude,
-            longitude: KARACHI_CENTER_COORDINATE.longitude,
-            latitudeDelta: 0.05,
-            longitudeDelta: 0.05,
-          }}
-        >
-          {/* A. DYNAMIC HAZARD OVERLAYS */}
-          {!isLoadingMapData && hazards.map((hazard: HazardData) => {
-              const spatialData: ParsedSpatialData | null = parseSpatialData(hazard.location);
-              
-              const isSpatialInvalid: boolean = !spatialData;
-              if (isSpatialInvalid) return null;
+        <Fragment>
+          {/* ========================================== */}
+          {/* 1. PRIMARY MAP ENGINE OVERLAYS             */}
+          {/* ========================================== */}
+          
+          {isExecutionEnvironmentRunningOnWebPlatformBooleanCheck ? (
+            <View style={styles.webFallbackContainerView}>
+              <MaterialCommunityIcons name="map-marker-off" size={48} color={COLORS.textDark} />
+              <Text style={styles.webFallbackInformationText}>High-Fidelity 3D Map rendering matrix explicitly requires a physical mobile OS framework natively.</Text>
+            </View>
+          ) : (
+            <MapView
+              ref={mapRef}
+              style={styles.hardwareMapViewLayer}
+              showsUserLocation={true}
+              onUserLocationChange={handleUserLocationUpdate}
+              showsBuildings={true}
+              pitchEnabled={true}
+              provider={PROVIDER_GOOGLE}
+              customMapStyle={isDarkMode ? TACTICAL_MAP_STYLE : []}
+              onRegionChangeComplete={handleRegionChangeComplete}
+              minZoomLevel={11}
+              initialRegion={{
+                latitude: KARACHI_CENTER_COORDINATE.latitude,
+                longitude: KARACHI_CENTER_COORDINATE.longitude,
+                latitudeDelta: 0.05,
+                longitudeDelta: 0.05,
+              }}
+            >
+              {/* A. DYNAMIC HAZARD OVERLAYS LAYER */}
+              {!isLoadingMapData && hazards.map((activeHazardIteratorDataBlock: HazardData) => {
+                  const computationallyParsedHazardSpatialNodeDataStruct: ParsedSpatialData | null = parseSpatialData(activeHazardIteratorDataBlock.location);
+                  
+                  const isSpatialDataStructurallyInvalidCheckFlag: boolean = !computationallyParsedHazardSpatialNodeDataStruct;
+                  if (isSpatialDataStructurallyInvalidCheckFlag) return null;
 
-              const formattedTitle: string = hazard.hazard_type.replace('_', ' ').toUpperCase();
-              const emojiIcon: string = getHazardEmoji(hazard.hazard_type);
+                  const formattedVisualHazardTitleStringLabel: string = activeHazardIteratorDataBlock.hazard_type.replace('_', ' ').toUpperCase();
+                  const visuallyResolvedEmojiIconCharacterString: string = getHazardEmoji(activeHazardIteratorDataBlock.hazard_type);
 
-              const isPointMarker: boolean = spatialData!.type === 'point';
+                  const isSpatialDataPointTypeExplicitlySetFlag: boolean = computationallyParsedHazardSpatialNodeDataStruct!.type === 'point';
 
-              if (isPointMarker) {
-                return (
-                  <Marker key={`hazard-point-${hazard.id}`} coordinate={spatialData!.coordinates[0]} title={formattedTitle}>
-                    <View style={styles.emojiMarkerContainer}>
-                      <Text style={styles.emojiMarkerText}>{emojiIcon}</Text>
-                    </View>
-                  </Marker>
-                );
+                  if (isSpatialDataPointTypeExplicitlySetFlag) {
+                    return (
+                      <Marker key={`hazard-point-dynamic-${activeHazardIteratorDataBlock.id}`} coordinate={computationallyParsedHazardSpatialNodeDataStruct!.coordinates[0]} title={formattedVisualHazardTitleStringLabel}>
+                        <View style={styles.emojiVisualMarkerCircleContainerNode}>
+                          <Text style={styles.emojiVisualMarkerCharacterTextString}>{visuallyResolvedEmojiIconCharacterString}</Text>
+                        </View>
+                      </Marker>
+                    );
+                  }
+
+                  const lineCoordinatesTotalArrayLengthValue: number = computationallyParsedHazardSpatialNodeDataStruct!.coordinates.length;
+                  const calculatedPinANodeObject: CoordinatePayload = computationallyParsedHazardSpatialNodeDataStruct!.coordinates[0];
+                  const calculatedPinBNodeObject: CoordinatePayload = computationallyParsedHazardSpatialNodeDataStruct!.coordinates[lineCoordinatesTotalArrayLengthValue - 1];
+
+                  return (
+                    <Fragment key={`hazard-linestring-dynamic-${activeHazardIteratorDataBlock.id}`}>
+                      <Marker coordinate={calculatedPinANodeObject} title={`${formattedVisualHazardTitleStringLabel} (Physical Start Anchor Point)`}>
+                        <View style={styles.emojiVisualMarkerCircleContainerNode}>
+                          <Text style={styles.emojiVisualMarkerCharacterTextString}>{visuallyResolvedEmojiIconCharacterString}</Text>
+                        </View>
+                      </Marker>
+                      <Marker coordinate={calculatedPinBNodeObject} title={`${formattedVisualHazardTitleStringLabel} (Physical End Anchor Point)`}>
+                        <View style={styles.emojiVisualMarkerCircleContainerNode}>
+                          <Text style={styles.emojiVisualMarkerCharacterTextString}>{visuallyResolvedEmojiIconCharacterString}</Text>
+                        </View>
+                      </Marker>
+                      <Polyline
+                        coordinates={computationallyParsedHazardSpatialNodeDataStruct!.coordinates}
+                        strokeColor={COLORS.primary}
+                        strokeWidth={8}
+                        lineDashPattern={[15, 10]}
+                      />
+                    </Fragment>
+                  );
+                })
               }
 
-              const arrLength: number = spatialData!.coordinates.length;
-              const pinA: CoordinatePayload = spatialData!.coordinates[0];
-              const pinB: CoordinatePayload = spatialData!.coordinates[arrLength - 1];
-
-              return (
-                <Fragment key={`hazard-line-${hazard.id}`}>
-                  <Marker coordinate={pinA} title={`${formattedTitle} (Start Anchor)`}>
-                    <View style={styles.emojiMarkerContainer}>
-                      <Text style={styles.emojiMarkerText}>{emojiIcon}</Text>
-                    </View>
-                  </Marker>
-                  <Marker coordinate={pinB} title={`${formattedTitle} (End Anchor)`}>
-                    <View style={styles.emojiMarkerContainer}>
-                      <Text style={styles.emojiMarkerText}>{emojiIcon}</Text>
-                    </View>
-                  </Marker>
-                  <Polyline
-                    coordinates={spatialData!.coordinates}
-                    strokeColor={COLORS.primary}
-                    strokeWidth={8}
-                    lineDashPattern={[15, 10]}
-                  />
-                </Fragment>
-              );
-            })
-          }
-
-          {/* B. OSRM ROUTING PATH RENDERING */}
-          {(interactionMode === 'routing' || interactionMode === 'active_navigation') && calculatedSafeRoute !== null && (
-            <Polyline
-              coordinates={calculatedSafeRoute.coordinates}
-              strokeColor={COLORS.safeRoute}
-              strokeWidth={6}
-              lineCap="round"
-              lineJoin="round"
-            />
-          )}
-
-          {/* C. INTERACTIVE DRAFT PINS (REPORT MODE LOGIC) */}
-          {interactionMode !== 'view' && interactionMode !== 'routing' && interactionMode !== 'active_navigation' && draftPinA !== null && (
-            <Marker
-              coordinate={draftPinA}
-              draggable={true}
-              onDragEnd={(event: MarkerDragStartEndEvent) => handlePinDragEnd(event, 'A')}
-              pinColor={COLORS.primary}
-            />
-          )}
-
-          {interactionMode === 'report_dual' && draftPinB !== null && (
-            <Marker
-              coordinate={draftPinB}
-              draggable={true}
-              onDragEnd={(event: MarkerDragStartEndEvent) => handlePinDragEnd(event, 'B')}
-              pinColor={COLORS.warning}
-            />
-          )}
-
-          {interactionMode === 'report_dual' && draftPinA !== null && draftPinB !== null && (
-            <Polyline coordinates={[draftPinA, draftPinB]} strokeColor={COLORS.primary} strokeWidth={6} lineDashPattern={[10, 10]} />
-          )}
-        </MapView>
-      )}
-
-      {/* ========================================== */}
-      {/* 2. TOP HUD OVERLAYS                          */}
-      {/* ========================================== */}
-      
-      {/* STANDARD VIEWPORT MODE TOP HUD */}
-      {interactionMode === 'view' && (
-        <View style={styles.topBar}>
-          <View style={[styles.searchBox, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}>
-            <Text style={[styles.searchText, isDarkMode && { color: COLORS.surface }]}>
-              {translateFunction('greeting')} {user?.username || 'Citizen'}
-            </Text>
-          </View>
-
-          {/* WADIAH UPGRADE: High-visibility language translation toggle pill */}
-          <TouchableOpacity
-            style={[styles.profileButton, { marginRight: 10 }, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}
-            activeOpacity={0.8}
-            onPress={() => {
-                const targetLanguageCode: 'en' | 'ur' = activeLanguageCode === 'en' ? 'ur' : 'en';
-                switchLanguageFunction(targetLanguageCode);
-            }}
-          >
-            <Text style={{ fontSize: 16, fontWeight: '800', color: COLORS.primary }}>
-                {activeLanguageCode === 'en' ? 'اردو' : 'EN'}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.profileButton, { marginRight: 10 }, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}
-            activeOpacity={0.8}
-            onPress={() => setIsDarkMode(!isDarkMode)}
-          >
-            <MaterialCommunityIcons
-              name={isDarkMode ? 'white-balance-sunny' : 'moon-waning-crescent'}
-              size={22}
-              color={COLORS.primary}
-            />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.profileButton, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}
-            activeOpacity={0.8}
-            onPress={handleSecureLogout}
-          >
-            <MaterialCommunityIcons name="logout" size={22} color={COLORS.primary} />
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* ROUTING ENGINE TOP HUD: Safe-Path Input Architecture Natively */}
-      {interactionMode === 'routing' && (
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={[styles.routingTopPanel, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}
-        >
-          <View style={styles.routingHeaderRow}>
-            <TouchableOpacity onPress={cancelActiveModality} style={styles.routingBackButton}>
-              <MaterialCommunityIcons name="arrow-left" size={24} color={isDarkMode ? COLORS.surface : COLORS.textDark} />
-            </TouchableOpacity>
-            <Text style={[styles.routingTitleText, isDarkMode && { color: COLORS.surface }]}>
-                {translateFunction('safe_path_title')}
-            </Text>
-          </View>
-
-          {/* START LOCATION INPUT SEQUENCE */}
-          <View style={[styles.routingInputGroup, { zIndex: 9999 }]}>
-            <MaterialCommunityIcons name="circle-slice-8" size={16} color={COLORS.safeRoute} style={styles.routingIcon} />
-            <TextInput
-              style={[styles.routingInput, isDarkMode && { backgroundColor: '#2B2D42', color: COLORS.surface }]}
-              value={startLocationText}
-              onChangeText={(text: string) => executeLocationSearch(text, 'start')}
-              placeholder={translateFunction('start_placeholder')}
-              placeholderTextColor={COLORS.textMuted}
-            />
-            {isSearchingStartLocation && (
-              <ActivityIndicator color={COLORS.safeRoute} style={{ position: 'absolute', right: 15 }} />
-            )}
-          </View>
-
-          {/* START LOCATION SUGGESTIONS DROPDOWN (DEBOUNCED) */}
-          {startSearchSuggestions.length > 0 && (
-            <View
-              style={[
-                styles.searchDropdownContainer,
-                { top: 120 },
-                isDarkMode && { backgroundColor: '#2B2D42', borderColor: '#1E2028' },
-              ]}
-            >
-              <FlatList
-                data={startSearchSuggestions}
-                keyExtractor={(item: NominatimSuggestion) => item.place_id.toString()}
-                keyboardShouldPersistTaps="handled"
-                renderItem={({ item }) => {
-                  const primaryName: string = extractBestPlaceName(item);
-                  const secondaryLine: string = extractSecondaryAddressLine(item, primaryName);
-                  return (
-                    <TouchableOpacity
-                      style={[styles.suggestionItem, isDarkMode && { borderBottomColor: '#1E2028' }]}
-                      onPress={() => handleSuggestionSelection(item, 'start')}
-                    >
-                      <MaterialCommunityIcons
-                        name="map-marker-outline"
-                        size={18}
-                        color={COLORS.textMuted}
-                        style={{ marginRight: 10 }}
-                      />
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.suggestionText, isDarkMode && { color: COLORS.surface }]} numberOfLines={1}>
-                          {primaryName}
-                        </Text>
-                        {secondaryLine.length > 0 && (
-                          <Text style={styles.suggestionSubText} numberOfLines={1}>
-                            {secondaryLine}
-                          </Text>
-                        )}
-                      </View>
-                    </TouchableOpacity>
-                  );
-                }}
-              />
-            </View>
-          )}
-
-          {/* DESTINATION LOCATION INPUT SEQUENCE */}
-          <View style={[styles.routingInputGroup, { zIndex: 9998 }]}>
-            <MaterialCommunityIcons
-              name="map-marker"
-              size={20}
-              color={COLORS.primary}
-              style={[styles.routingIcon, { marginLeft: -2 }]}
-            />
-            <TextInput
-              style={[styles.routingInput, isDarkMode && { backgroundColor: '#2B2D42', color: COLORS.surface }]}
-              value={destinationText}
-              onChangeText={(text: string) => executeLocationSearch(text, 'destination')}
-              placeholder={translateFunction('dest_placeholder')}
-              placeholderTextColor={COLORS.textMuted}
-            />
-            {isSearchingDestinationLocation && (
-              <ActivityIndicator color={COLORS.primary} style={{ position: 'absolute', right: 15 }} />
-            )}
-          </View>
-
-          {/* DESTINATION SUGGESTIONS DROPDOWN (DEBOUNCED) */}
-          {destinationSearchSuggestions.length > 0 && (
-            <View
-              style={[
-                styles.searchDropdownContainer,
-                { top: 180 },
-                isDarkMode && { backgroundColor: '#2B2D42', borderColor: '#1E2028' },
-              ]}
-            >
-              <FlatList
-                data={destinationSearchSuggestions}
-                keyExtractor={(item: NominatimSuggestion) => item.place_id.toString()}
-                keyboardShouldPersistTaps="handled"
-                renderItem={({ item }) => {
-                  const primaryName: string = extractBestPlaceName(item);
-                  const secondaryLine: string = extractSecondaryAddressLine(item, primaryName);
-                  return (
-                    <TouchableOpacity
-                      style={[styles.suggestionItem, isDarkMode && { borderBottomColor: '#1E2028' }]}
-                      onPress={() => handleSuggestionSelection(item, 'destination')}
-                    >
-                      <MaterialCommunityIcons
-                        name="map-marker-outline"
-                        size={18}
-                        color={COLORS.textMuted}
-                        style={{ marginRight: 10 }}
-                      />
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.suggestionText, isDarkMode && { color: COLORS.surface }]} numberOfLines={1}>
-                          {primaryName}
-                        </Text>
-                        {secondaryLine.length > 0 && (
-                          <Text style={styles.suggestionSubText} numberOfLines={1}>
-                            {secondaryLine}
-                          </Text>
-                        )}
-                      </View>
-                    </TouchableOpacity>
-                  );
-                }}
-              />
-            </View>
-          )}
-
-          {/* VEHICLE MODALITY TOGGLE ARRAY (FOUR-TIER TRUE ROUTING IMPL) */}
-          <View style={styles.modalityContainer}>
-            {(['car', 'bike', 'truck', 'foot'] as VehicleModality[]).map((vehicleModeIter) => (
-              <TouchableOpacity
-                key={vehicleModeIter}
-                style={[styles.modalityBtn, activeVehicle === vehicleModeIter && styles.modalityBtnActive]}
-                onPress={() => switchVehicleModality(vehicleModeIter)}
-              >
-                <MaterialCommunityIcons
-                  name={VEHICLE_PROFILES[vehicleModeIter].iconName as any}
-                  size={24}
-                  color={activeVehicle === vehicleModeIter ? COLORS.surface : COLORS.textMuted}
+              {/* B. OSRM ROUTING PATH RENDERING OVERLAY LAYER */}
+              {(interactionMode === 'routing' || interactionMode === 'active_navigation') && calculatedSafeRoute !== null && (
+                <Polyline
+                  coordinates={calculatedSafeRoute.coordinates}
+                  strokeColor={COLORS.safeRoute}
+                  strokeWidth={6}
+                  lineCap="round"
+                  lineJoin="round"
                 />
-                <Text style={[styles.modalityBtnText, activeVehicle === vehicleModeIter && { color: COLORS.surface }]}>
-                  {VEHICLE_PROFILES[vehicleModeIter].displayLabel}
+              )}
+
+              {/* C. INTERACTIVE DRAFT PINS */}
+              {interactionMode !== 'view' && interactionMode !== 'routing' && interactionMode !== 'active_navigation' && draftPinA !== null && (
+                <Marker
+                  coordinate={draftPinA}
+                  draggable={true}
+                  onDragEnd={(hardwareDragDropNativeEventPayload: MarkerDragStartEndEvent) => handlePinDragEndNativeCoordinateExtraction(hardwareDragDropNativeEventPayload, 'A')}
+                  pinColor={COLORS.primary}
+                />
+              )}
+
+              {interactionMode === 'report_dual' && draftPinB !== null && (
+                <Marker
+                  coordinate={draftPinB}
+                  draggable={true}
+                  onDragEnd={(hardwareDragDropNativeEventPayload: MarkerDragStartEndEvent) => handlePinDragEndNativeCoordinateExtraction(hardwareDragDropNativeEventPayload, 'B')}
+                  pinColor={COLORS.warning}
+                />
+              )}
+
+              {interactionMode === 'report_dual' && draftPinA !== null && draftPinB !== null && (
+                <Polyline coordinates={[draftPinA, draftPinB]} strokeColor={COLORS.primary} strokeWidth={6} lineDashPattern={[10, 10]} />
+              )}
+            </MapView>
+          )}
+
+          {/* ========================================== */}
+          {/* 2. TOP HUD OVERLAYS                        */}
+          {/* ========================================== */}
+          
+          {interactionMode === 'view' && (
+            <View style={styles.hardwareTopBarOverlayViewBox}>
+              
+              <TouchableOpacity onPress={cancelActiveModalityState} style={[styles.hardwareProfileAvatarButtonSquare, isDarkMode && { backgroundColor: COLORS.surfaceDark }, { marginRight: 10, width: 'auto', paddingHorizontal: 16 }]}>
+                <MaterialCommunityIcons name="home-outline" size={22} color={COLORS.primary} style={{ marginRight: 6 }}/>
+                <Text style={{fontWeight: '700', color: COLORS.primary}}>Home Dashboard</Text>
+              </TouchableOpacity>
+              
+              <View style={[styles.universalSearchBoxContainerStruct, isDarkMode && { backgroundColor: COLORS.surfaceDark }, {flex: 1}]}>
+                <Text style={[styles.universalSearchTextTitleString, isDarkMode && { color: COLORS.surface }]}>
+                  {translateFunction('dashboardTitle')}
+                </Text>
+              </View>
+
+              {/* WADIAH TOP BAR LANGUAGE TOGGLE */}
+              <TouchableOpacity
+                style={[styles.hardwareProfileAvatarButtonSquare, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}
+                activeOpacity={0.8}
+                onPress={toggleLanguageFunction}
+              >
+                <Text style={{ fontSize: 14, fontWeight: '800', color: COLORS.primary }}>
+                  {activeLanguageCode === 'en' ? 'اردو' : 'EN'}
                 </Text>
               </TouchableOpacity>
-            ))}
-          </View>
 
-          {/* LIMITATION NOTE FOR MODALITY */}
-          {VEHICLE_PROFILES[activeVehicle].limitationNote !== null && (
-            <Text style={styles.vehicleLimitationNote}>{VEHICLE_PROFILES[activeVehicle].limitationNote}</Text>
+              <TouchableOpacity
+                style={[styles.hardwareProfileAvatarButtonSquare, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}
+                activeOpacity={0.8}
+                onPress={() => setIsDarkMode(!isDarkMode)}
+              >
+                <MaterialCommunityIcons name={isDarkMode ? 'white-balance-sunny' : 'moon-waning-crescent'} size={22} color={COLORS.primary} />
+              </TouchableOpacity>
+            </View>
           )}
 
-          {/* FIND SAFE ROUTE CALCULATION TRIGGER */}
-          <TouchableOpacity
-            style={[
-              styles.calculateRouteBtn,
-              (destinationCoordinate === null || isRouteCalculating) && styles.calculateRouteBtnDisabled,
-            ]}
-            activeOpacity={0.85}
-            onPress={() => calculateRouteEngine()}
-            disabled={destinationCoordinate === null || isRouteCalculating}
-          >
-            {isRouteCalculating ? (
-              <ActivityIndicator color={COLORS.surface} />
-            ) : (
-              <>
-                <MaterialCommunityIcons name="shield-check" size={20} color={COLORS.surface} />
-                <Text style={styles.calculateRouteBtnText}>{translateFunction('find_route')}</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </KeyboardAvoidingView>
-      )}
-
-      {/* ========================================== */}
-      {/* 3. REPORT MODE HUD PANEL                     */}
-      {/* ========================================== */}
-      {/* The Unified Reporting HUD retained exactly from your Golden Baseline */}
-      {(interactionMode === 'report_single' || interactionMode === 'report_dual') && (
-        <View style={[styles.reportPanel, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}>
-          <Text style={[styles.reportPanelTitle, isDarkMode && { color: COLORS.surface }]}>
-            {interactionMode === 'report_dual' ? 'Mark Road Blockage' : 'Mark Hazard Location'}
-          </Text>
-          <Text style={styles.reportPanelSubtitle}>
-            {interactionMode === 'report_dual'
-              ? 'Drag both pins to the exact start and end of the blocked road segment.'
-              : 'Drag the pin to the exact physical location of the hazard.'}
-          </Text>
-
-          <View style={styles.reportToggleContainer}>
-            <TouchableOpacity
-              style={[styles.reportToggleBtn, interactionMode === 'report_single' && styles.reportToggleBtnActive]}
-              onPress={() => activateReportingMode('report_single')}
+          {/* ROUTING ENGINE TOP HUD */}
+          {interactionMode === 'routing' && (
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              style={[styles.routingEngineTopPanelHardwareContainer, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}
             >
-              <Text
+              <View style={styles.routingEngineHeaderTitleRowFlex}>
+                <TouchableOpacity onPress={cancelActiveModalityState} style={styles.routingEngineHardwareBackButtonWrap}>
+                  <MaterialCommunityIcons name="arrow-left" size={24} color={isDarkMode ? COLORS.surface : COLORS.textDark} />
+                </TouchableOpacity>
+                <Text style={[styles.routingEngineTitleLabelStringText, isDarkMode && { color: COLORS.surface }]}>{translateFunction('safe_path_title')}</Text>
+              </View>
+
+              {/* START LOCATION INPUT */}
+              <View style={[styles.routingEngineInputGroupRowFlexContainer, { zIndex: 9999 }]}>
+                <MaterialCommunityIcons name="circle-slice-8" size={16} color={COLORS.safeRoute} style={styles.routingEngineInputIconSpacing} />
+                <TextInput
+                  style={[styles.routingEngineInputFieldComponent, isDarkMode && { backgroundColor: '#2B2D42', color: COLORS.surface }]}
+                  value={startLocationText}
+                  onChangeText={(changedTextParameterString: string) => executeLocationSearch(changedTextParameterString, 'start')}
+                  placeholder={translateFunction('start_placeholder')}
+                  placeholderTextColor={COLORS.textMuted}
+                />
+                {isSearchingStartLocation && (
+                  <ActivityIndicator color={COLORS.safeRoute} style={{ position: 'absolute', right: 15 }} />
+                )}
+              </View>
+
+              {startSearchSuggestions.length > 0 && (
+                <View
+                  style={[
+                    styles.universalSearchDropdownAbsoluteContainerLayer,
+                    { top: 120 },
+                    isDarkMode && { backgroundColor: '#2B2D42', borderColor: '#1E2028' },
+                  ]}
+                >
+                  <FlatList
+                    data={startSearchSuggestions}
+                    keyExtractor={(listExtractedItemBlockNode: NominatimSuggestion) => listExtractedItemBlockNode.place_id.toString()}
+                    keyboardShouldPersistTaps="handled"
+                    renderItem={({ item }) => {
+                      const structurallyResolvedPrimaryAddressNameString: string = extractBestPlaceName(item);
+                      const structurallyResolvedSecondaryAddressLineString: string = extractSecondaryAddressLine(item, structurallyResolvedPrimaryAddressNameString);
+                      return (
+                        <TouchableOpacity
+                          style={[styles.universalSuggestionItemFlexRow, isDarkMode && { borderBottomColor: '#1E2028' }]}
+                          onPress={() => handleSuggestionSelection(item, 'start')}
+                        >
+                          <MaterialCommunityIcons name="map-marker-outline" size={18} color={COLORS.textMuted} style={{ marginRight: 10 }} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.universalSuggestionTitleTextStrong, isDarkMode && { color: COLORS.surface }]} numberOfLines={1}>
+                              {structurallyResolvedPrimaryAddressNameString}
+                            </Text>
+                            {structurallyResolvedSecondaryAddressLineString.length > 0 && (
+                              <Text style={styles.universalSuggestionSubtitleTextFaded} numberOfLines={1}>
+                                {structurallyResolvedSecondaryAddressLineString}
+                              </Text>
+                            )}
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    }}
+                  />
+                </View>
+              )}
+
+              {/* DESTINATION LOCATION INPUT */}
+              <View style={[styles.routingEngineInputGroupRowFlexContainer, { zIndex: 9998 }]}>
+                <MaterialCommunityIcons
+                  name="map-marker"
+                  size={20}
+                  color={COLORS.primary}
+                  style={[styles.routingEngineInputIconSpacing, { marginLeft: -2 }]}
+                />
+                <TextInput
+                  style={[styles.routingEngineInputFieldComponent, isDarkMode && { backgroundColor: '#2B2D42', color: COLORS.surface }]}
+                  value={destinationText}
+                  onChangeText={(changedTextParameterString: string) => executeLocationSearch(changedTextParameterString, 'destination')}
+                  placeholder={translateFunction('dest_placeholder')}
+                  placeholderTextColor={COLORS.textMuted}
+                />
+                {isSearchingDestinationLocation && (
+                  <ActivityIndicator color={COLORS.primary} style={{ position: 'absolute', right: 15 }} />
+                )}
+              </View>
+
+              {destinationSearchSuggestions.length > 0 && (
+                <View
+                  style={[
+                    styles.universalSearchDropdownAbsoluteContainerLayer,
+                    { top: 180 },
+                    isDarkMode && { backgroundColor: '#2B2D42', borderColor: '#1E2028' },
+                  ]}
+                >
+                  <FlatList
+                    data={destinationSearchSuggestions}
+                    keyExtractor={(listExtractedItemBlockNode: NominatimSuggestion) => listExtractedItemBlockNode.place_id.toString()}
+                    keyboardShouldPersistTaps="handled"
+                    renderItem={({ item }) => {
+                      const structurallyResolvedPrimaryAddressNameString: string = extractBestPlaceName(item);
+                      const structurallyResolvedSecondaryAddressLineString: string = extractSecondaryAddressLine(item, structurallyResolvedPrimaryAddressNameString);
+                      return (
+                        <TouchableOpacity
+                          style={[styles.universalSuggestionItemFlexRow, isDarkMode && { borderBottomColor: '#1E2028' }]}
+                          onPress={() => handleSuggestionSelection(item, 'destination')}
+                        >
+                          <MaterialCommunityIcons name="map-marker-outline" size={18} color={COLORS.textMuted} style={{ marginRight: 10 }} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.universalSuggestionTitleTextStrong, isDarkMode && { color: COLORS.surface }]} numberOfLines={1}>
+                              {structurallyResolvedPrimaryAddressNameString}
+                            </Text>
+                            {structurallyResolvedSecondaryAddressLineString.length > 0 && (
+                              <Text style={styles.universalSuggestionSubtitleTextFaded} numberOfLines={1}>
+                                {structurallyResolvedSecondaryAddressLineString}
+                              </Text>
+                            )}
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    }}
+                  />
+                </View>
+              )}
+
+              {/* VEHICLE MODALITY TOGGLE ARRAY */}
+              <View style={styles.vehicleModalityToggleContainerRowBox}>
+                {(['car', 'bike', 'truck', 'foot'] as VehicleModality[]).map((vehicleModeEnumIteratedIndex) => (
+                  <TouchableOpacity
+                    key={vehicleModeEnumIteratedIndex}
+                    style={[styles.vehicleModalitySelectableButtonCore, activeVehicle === vehicleModeEnumIteratedIndex && styles.vehicleModalitySelectableButtonCoreActive]}
+                    onPress={() => switchVehicleModality(vehicleModeEnumIteratedIndex)}
+                  >
+                    <MaterialCommunityIcons
+                      name={VEHICLE_PROFILES[vehicleModeEnumIteratedIndex].iconName as any}
+                      size={24}
+                      color={activeVehicle === vehicleModeEnumIteratedIndex ? COLORS.surface : COLORS.textMuted}
+                    />
+                    <Text style={[styles.vehicleModalitySelectableButtonLabelString, activeVehicle === vehicleModeEnumIteratedIndex && { color: COLORS.surface }]}>
+                      {VEHICLE_PROFILES[vehicleModeEnumIteratedIndex].displayLabel}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {VEHICLE_PROFILES[activeVehicle].limitationNote !== null && (
+                <Text style={styles.vehicleModalityLimitationNoteDisclaimerStringText}>{VEHICLE_PROFILES[activeVehicle].limitationNote}</Text>
+              )}
+
+              <TouchableOpacity
                 style={[
-                  styles.reportToggleBtnText,
-                  interactionMode === 'report_single' && styles.reportToggleBtnTextActive,
+                  styles.calculateSafeRouteSubmissionButtonComponent,
+                  (destinationCoordinate === null || isRouteCalculating) && styles.calculateSafeRouteSubmissionButtonComponentDisabledState,
                 ]}
+                activeOpacity={0.85}
+                onPress={() => calculateRouteEngine()}
+                disabled={destinationCoordinate === null || isRouteCalculating}
               >
-                Point Hazard
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.reportToggleBtn, interactionMode === 'report_dual' && styles.reportToggleBtnActive]}
-              onPress={() => activateReportingMode('report_dual')}
-            >
-              <Text
-                style={[styles.reportToggleBtnText, interactionMode === 'report_dual' && styles.reportToggleBtnTextActive]}
-              >
-                Road Blockage
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.reportButtonRow}>
-            <TouchableOpacity style={styles.reportCancelBtn} activeOpacity={0.85} onPress={cancelActiveModality}>
-              <Text style={styles.reportCancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.reportConfirmBtn} activeOpacity={0.85} onPress={confirmReportCoordinates}>
-              <MaterialCommunityIcons name="check-bold" size={18} color={COLORS.surface} />
-              <Text style={styles.reportConfirmText}>Confirm Location</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      {/* ========================================== */}
-      {/* 4. ROUTE METRICS / START NAVIGATION PANEL    */}
-      {/* ========================================== */}
-      {interactionMode === 'routing' && calculatedSafeRoute !== null && (
-        <View style={[styles.routeMetricsPanel, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}>
-          <View style={styles.routeMetricsRow}>
-            <View>
-              <Text style={[styles.routeMetricsDistance, isDarkMode && { color: COLORS.surface }]}>
-                {calculatedSafeRoute.distanceKm.toFixed(1)} km
-              </Text>
-              <Text style={styles.routeMetricsSubText}>
-                Approx. {calculatedSafeRoute.estimatedMinutes} min by {VEHICLE_PROFILES[activeVehicle].displayLabel}
-              </Text>
-            </View>
-          </View>
-
-          <TouchableOpacity
-            style={styles.startNavigationBtn}
-            activeOpacity={0.85}
-            onPress={startInAppNavigation}
-          >
-            <MaterialCommunityIcons name="navigation" size={20} color={COLORS.surface} />
-            <Text style={styles.startNavigationText}>Start Navigation</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* ========================================== */}
-      {/* 5. TRUE IN-APP NAVIGATION HUD (ACTIVE NAV)   */}
-      {/* ========================================== */}
-      {interactionMode === 'active_navigation' && calculatedSafeRoute !== null && (
-        <View style={[styles.activeNavTopPanel, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}>
-          <View style={styles.activeNavRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.activeNavDistanceText}>
-                {distanceRemainingNav.toFixed(2)} km Remaining
-              </Text>
-              <Text style={[styles.activeNavDestinationText, isDarkMode && { color: COLORS.surface }]} numberOfLines={1}>
-                To: {destinationText}
-              </Text>
-            </View>
-            <TouchableOpacity style={styles.activeNavCancelBtn} onPress={cancelActiveModality}>
-              <MaterialCommunityIcons name="close-octagon" size={24} color={COLORS.surface} />
-              <Text style={styles.activeNavCancelText}>Exit</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      {/* ========================================== */}
-      {/* 6. THE FULL FLOATING ACTION BUTTON RAIL      */}
-      {/* ========================================== */}
-      {interactionMode === 'view' && (
-        <View style={styles.fabContainer}>
-          
-          <TouchableOpacity style={[styles.fab, styles.fabPrimary]} activeOpacity={0.85} onPress={initiateRoutingMode}>
-            <MaterialCommunityIcons name="directions" size={26} color={COLORS.surface} />
-            <Text style={[styles.fabText, { color: COLORS.surface }]}>{translateFunction('fab_navigate')}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.fab, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}
-            activeOpacity={0.85}
-            onPress={() => router.push('/chat')}
-          >
-            <MaterialCommunityIcons name="forum-outline" size={24} color={isDarkMode ? COLORS.surface : COLORS.textDark} />
-            <Text style={[styles.fabText, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_chat')}</Text>
-          </TouchableOpacity>
-
-          {user?.role === 'warden' && (
-            <TouchableOpacity
-              style={[styles.fab, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}
-              activeOpacity={0.85}
-              onPress={() => router.push('/warden')}
-            >
-              <MaterialCommunityIcons name="shield-account-outline" size={24} color={COLORS.primary} />
-              <Text style={[styles.fabText, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_warden')}</Text>
-            </TouchableOpacity>
+                {isRouteCalculating ? (
+                  <ActivityIndicator color={COLORS.surface} />
+                ) : (
+                  <>
+                    <MaterialCommunityIcons name="shield-check" size={20} color={COLORS.surface} />
+                    <Text style={styles.calculateSafeRouteSubmissionButtonStringLabelText}>{translateFunction('find_route')}</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </KeyboardAvoidingView>
           )}
 
-          {user?.role === 'shopkeeper' && (
-            <TouchableOpacity
-              style={[styles.fab, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}
-              activeOpacity={0.85}
-              onPress={() => router.push('/shopkeeper')}
-            >
-              <MaterialCommunityIcons
-                name="storefront-outline"
-                size={24}
-                color={isDarkMode ? COLORS.surface : COLORS.textDark}
-              />
-              <Text style={[styles.fabText, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_portal')}</Text>
-            </TouchableOpacity>
+          {/* ========================================== */}
+          {/* 3. REPORT MODE HUD PANEL                   */}
+          {/* ========================================== */}
+          {(interactionMode === 'report_single' || interactionMode === 'report_dual') && (
+            <View style={[styles.unifiedReportingPanelAbsoluteContainerBox, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}>
+              <Text style={[styles.unifiedReportingPanelMasterTitleStringText, isDarkMode && { color: COLORS.surface }]}>
+                {interactionMode === 'report_dual' ? 'Initialize Road Blockage Matrix' : 'Pinpoint Hazard Epicenter Coordinate Location'}
+              </Text>
+              <Text style={styles.unifiedReportingPanelMasterSubtitleStringText}>
+                {interactionMode === 'report_dual'
+                  ? 'Drag both physical pins structurally to denote the exact start and end coordinate points of the blocked road vector segment on the mapping grid.'
+                  : 'Drag the primary anchor pin accurately to the exact physical geographical hardware location of the structural hazard anomaly.'}
+              </Text>
+
+              <View style={styles.unifiedReportingPanelSegmentedToggleContainerRow}>
+                <TouchableOpacity
+                  style={[styles.unifiedReportingPanelSegmentedToggleButtonNode, interactionMode === 'report_single' && styles.unifiedReportingPanelSegmentedToggleButtonNodeActive]}
+                  onPress={() => activateReportingModeState('report_single')}
+                >
+                  <Text
+                    style={[
+                      styles.unifiedReportingPanelSegmentedToggleButtonLabelString,
+                      interactionMode === 'report_single' && styles.unifiedReportingPanelSegmentedToggleButtonLabelStringActive,
+                    ]}
+                  >
+                    Point Hardware Hazard
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.unifiedReportingPanelSegmentedToggleButtonNode, interactionMode === 'report_dual' && styles.unifiedReportingPanelSegmentedToggleButtonNodeActive]}
+                  onPress={() => activateReportingModeState('report_dual')}
+                >
+                  <Text
+                    style={[styles.unifiedReportingPanelSegmentedToggleButtonLabelString, interactionMode === 'report_dual' && styles.unifiedReportingPanelSegmentedToggleButtonLabelStringActive]}
+                  >
+                    Road Vector Blockage
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.unifiedReportingPanelSubmissionActionRowFlex}>
+                <TouchableOpacity style={styles.unifiedReportingPanelCancelButtonNode} activeOpacity={0.85} onPress={cancelActiveModalityState}>
+                  <Text style={styles.unifiedReportingPanelCancelButtonLabelText}>Abort Execution</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.unifiedReportingPanelConfirmButtonNode} activeOpacity={0.85} onPress={confirmReportCoordinatesValidationDispatch}>
+                  <MaterialCommunityIcons name="check-bold" size={18} color={COLORS.surface} />
+                  <Text style={styles.unifiedReportingPanelConfirmButtonLabelText}>Secure Location</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           )}
 
-          <TouchableOpacity
-            style={[styles.fab, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}
-            activeOpacity={0.85}
-            onPress={triggerDualScannerMenu}
-          >
-            <MaterialCommunityIcons name="qrcode-scan" size={24} color={isDarkMode ? COLORS.surface : COLORS.textDark} />
-            <Text style={[styles.fabText, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_scan')}</Text>
-          </TouchableOpacity>
+          {/* ========================================== */}
+          {/* 4. ROUTE METRICS / START NAVIGATION        */}
+          {/* ========================================== */}
+          {interactionMode === 'routing' && calculatedSafeRoute !== null && (
+            <View style={[styles.mathematicalRouteMetricsPanelAbsoluteContainerBox, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}>
+              <View style={styles.mathematicalRouteMetricsPanelInformationRowFlex}>
+                <View>
+                  <Text style={[styles.mathematicalRouteMetricsPanelDistanceNumericalText, isDarkMode && { color: COLORS.surface }]}>
+                    {calculatedSafeRoute.distanceKm.toFixed(1)} Hardware Kilometers
+                  </Text>
+                  <Text style={styles.mathematicalRouteMetricsPanelSubInformationTextNode}>
+                    Approx. {calculatedSafeRoute.estimatedMinutes} mathematical minutes explicitly constrained by {VEHICLE_PROFILES[activeVehicle].displayLabel} physical profile limits.
+                  </Text>
+                </View>
+              </View>
 
-          <TouchableOpacity
-            style={[styles.fab, { backgroundColor: COLORS.primary }]}
-            activeOpacity={0.85}
-            onPress={() => activateReportingMode('report_single')}
-          >
-            <MaterialCommunityIcons name="alert-octagon" size={24} color={COLORS.surface} />
-            <Text style={[styles.fabText, { color: COLORS.surface }]}>{translateFunction('fab_report')}</Text>
-          </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.mathematicalRouteMetricsPanelStartNavigationButtonNode}
+                activeOpacity={0.85}
+                onPress={startInAppNavigation}
+              >
+                <MaterialCommunityIcons name="navigation" size={20} color={COLORS.surface} />
+                <Text style={styles.mathematicalRouteMetricsPanelStartNavigationButtonLabelText}>Commence True In-App Navigation Matrix</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
-          <TouchableOpacity
-            style={[styles.fab, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}
-            activeOpacity={0.85}
-            onPress={() => activateReportingMode('report_dual')}
-          >
-            <MaterialCommunityIcons name="road-variant" size={24} color={isDarkMode ? COLORS.surface : COLORS.textDark} />
-            <Text style={[styles.fabText, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_blockage')}</Text>
-          </TouchableOpacity>
+          {/* ========================================== */}
+          {/* 5. TRUE IN-APP NAVIGATION HUD              */}
+          {/* ========================================== */}
+          {interactionMode === 'active_navigation' && calculatedSafeRoute !== null && (
+            <View style={[styles.activeTrueNavigationTopInformationPanelBox, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}>
+              <View style={styles.activeTrueNavigationInformationRowFlexWrap}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.activeTrueNavigationDistanceRemainingLargeTextString}>
+                    {distanceRemainingNav.toFixed(2)} km Vector Length Remaining
+                  </Text>
+                  <Text style={[styles.activeTrueNavigationDestinationLabelSubTextString, isDarkMode && { color: COLORS.surface }]} numberOfLines={1}>
+                    Target Lock: {destinationText}
+                  </Text>
+                </View>
+                <TouchableOpacity style={styles.activeTrueNavigationCancelHardwareButtonNode} onPress={cancelActiveModalityState}>
+                  <MaterialCommunityIcons name="close-octagon" size={24} color={COLORS.surface} />
+                  <Text style={styles.activeTrueNavigationCancelButtonLabelTextString}>Exit System</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
 
-          <TouchableOpacity
-            style={[styles.fab, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}
-            activeOpacity={0.85}
-            onPress={() => router.push('/fund')}
-          >
-            <MaterialCommunityIcons
-              name="hand-coin-outline"
-              size={24}
-              color={isDarkMode ? COLORS.surface : COLORS.textDark}
-            />
-            <Text style={[styles.fabText, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_fund')}</Text>
-          </TouchableOpacity>
+          {/* ========================================== */}
+          {/* 6. FLOATING ACTION BUTTON RAIL             */}
+          {/* ========================================== */}
+          {interactionMode === 'view' && (
+            <View style={styles.omniFloatingActionButtonRailAbsoluteContainer}>
+              
+              <TouchableOpacity style={[styles.omniFloatingActionButtonCoreItemNode, styles.omniFloatingActionButtonPrimaryAccentNode]} activeOpacity={0.85} onPress={initiateRoutingMode}>
+                <MaterialCommunityIcons name="directions" size={26} color={COLORS.surface} />
+                <Text style={[styles.omniFloatingActionButtonLabelTextString, { color: COLORS.surface }]}>{translateFunction('fab_navigate')}</Text>
+              </TouchableOpacity>
 
-        </View>
-      )}
+              <TouchableOpacity
+                style={[styles.omniFloatingActionButtonCoreItemNode, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}
+                activeOpacity={0.85}
+                onPress={() => router.push('/chat')}
+              >
+                <MaterialCommunityIcons name="forum-outline" size={24} color={isDarkMode ? COLORS.surface : COLORS.textDark} />
+                <Text style={[styles.omniFloatingActionButtonLabelTextString, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_chat')}</Text>
+              </TouchableOpacity>
 
-      {/* ========================================== */}
-      {/* 7. GLOBAL LOADING INDICATOR OVERLAY          */}
-      {/* ========================================== */}
-      {isLoadingMapData && (
-        <View style={styles.loadingOverlay} pointerEvents="none">
-          <ActivityIndicator color={COLORS.primary} size="small" />
-        </View>
+              {user?.role === 'warden' && (
+                <TouchableOpacity
+                  style={[styles.omniFloatingActionButtonCoreItemNode, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}
+                  activeOpacity={0.85}
+                  onPress={() => router.push('/warden')}
+                >
+                  <MaterialCommunityIcons name="shield-account-outline" size={24} color={COLORS.primary} />
+                  <Text style={[styles.omniFloatingActionButtonLabelTextString, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_warden')}</Text>
+                </TouchableOpacity>
+              )}
+
+              {user?.role === 'shopkeeper' && (
+                <TouchableOpacity
+                  style={[styles.omniFloatingActionButtonCoreItemNode, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}
+                  activeOpacity={0.85}
+                  onPress={() => router.push('/shopkeeper')}
+                >
+                  <MaterialCommunityIcons
+                    name="storefront-outline"
+                    size={24}
+                    color={isDarkMode ? COLORS.surface : COLORS.textDark}
+                  />
+                  <Text style={[styles.omniFloatingActionButtonLabelTextString, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_portal')}</Text>
+                </TouchableOpacity>
+              )}
+
+              <TouchableOpacity
+                style={[styles.omniFloatingActionButtonCoreItemNode, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}
+                activeOpacity={0.85}
+                onPress={triggerDualScannerMenu}
+              >
+                <MaterialCommunityIcons name="qrcode-scan" size={24} color={isDarkMode ? COLORS.surface : COLORS.textDark} />
+                <Text style={[styles.omniFloatingActionButtonLabelTextString, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_scan')}</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.omniFloatingActionButtonCoreItemNode, { backgroundColor: COLORS.primary }]}
+                activeOpacity={0.85}
+                onPress={() => activateReportingModeState('report_single')}
+              >
+                <MaterialCommunityIcons name="alert-octagon" size={24} color={COLORS.surface} />
+                <Text style={[styles.omniFloatingActionButtonLabelTextString, { color: COLORS.surface }]}>{translateFunction('fab_report')}</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.omniFloatingActionButtonCoreItemNode, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}
+                activeOpacity={0.85}
+                onPress={() => activateReportingModeState('report_dual')}
+              >
+                <MaterialCommunityIcons name="road-variant" size={24} color={isDarkMode ? COLORS.surface : COLORS.textDark} />
+                <Text style={[styles.omniFloatingActionButtonLabelTextString, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_blockage')}</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.omniFloatingActionButtonCoreItemNode, isDarkMode && { backgroundColor: COLORS.surfaceDark }]}
+                activeOpacity={0.85}
+                onPress={() => router.push('/fund')}
+              >
+                <MaterialCommunityIcons
+                  name="hand-coin-outline"
+                  size={24}
+                  color={isDarkMode ? COLORS.surface : COLORS.textDark}
+                />
+                <Text style={[styles.omniFloatingActionButtonLabelTextString, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_fund')}</Text>
+              </TouchableOpacity>
+
+            </View>
+          )}
+
+          {/* ========================================== */}
+          {/* 7. GLOBAL LOADING INDICATOR OVERLAY        */}
+          {/* ========================================== */}
+          {isLoadingMapData && (
+            <View style={styles.globalApplicationLoadingOverlayShieldViewBox} pointerEvents="none">
+              <ActivityIndicator color={COLORS.primary} size="small" />
+            </View>
+          )}
+        </Fragment>
       )}
 
     </SafeAreaView>
@@ -2222,20 +2398,14 @@ export default function DashboardScreen(): React.JSX.Element {
 // EXHAUSTIVE STYLESHEET REGISTRY
 // ============================================================================
 
-/**
- * @constant styles
- * @description Single immutable StyleSheet source of truth for every visual element rendered by
- * DashboardScreen. Kept at module scope (outside the component) so React Native can compile and
- * cache the style objects exactly once rather than re-allocating them on every render pass.
- */
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  map: { ...StyleSheet.absoluteFillObject },
+  mainHardwareSafeAreaContainer: { flex: 1 },
+  hardwareMapViewLayer: { ...StyleSheet.absoluteFillObject },
 
-  webFallback: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40, backgroundColor: '#F4F7F9' },
-  webFallbackText: { marginTop: 14, fontSize: 15, textAlign: 'center', color: COLORS.textMuted },
+  webFallbackContainerView: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40, backgroundColor: '#F4F7F9' },
+  webFallbackInformationText: { marginTop: 14, fontSize: 15, textAlign: 'center', color: COLORS.textMuted },
 
-  emojiMarkerContainer: {
+  emojiVisualMarkerCircleContainerNode: {
     alignItems: 'center',
     justifyContent: 'center',
     width: 38,
@@ -2250,9 +2420,9 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 4,
   },
-  emojiMarkerText: { fontSize: 18 },
+  emojiVisualMarkerCharacterTextString: { fontSize: 18 },
 
-  topBar: {
+  hardwareTopBarOverlayViewBox: {
     position: 'absolute',
     top: Platform.OS === 'ios' ? 50 : 20,
     left: 16,
@@ -2261,7 +2431,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 999,
   },
-  searchBox: {
+  universalSearchBoxContainerStruct: {
     flex: 1,
     backgroundColor: COLORS.surface,
     borderRadius: 14,
@@ -2273,8 +2443,8 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 5,
   },
-  searchText: { fontSize: 15, fontWeight: '700', color: COLORS.textDark },
-  profileButton: {
+  universalSearchTextTitleString: { fontSize: 15, fontWeight: '700', color: COLORS.textDark },
+  hardwareProfileAvatarButtonSquare: {
     width: 48,
     height: 48,
     borderRadius: 14,
@@ -2289,7 +2459,7 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
 
-  routingTopPanel: {
+  routingEngineTopPanelHardwareContainer: {
     position: 'absolute',
     top: 0,
     left: 0,
@@ -2307,10 +2477,10 @@ const styles = StyleSheet.create({
     elevation: 6,
     zIndex: 10,
   },
-  routingHeaderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
-  routingBackButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', marginRight: 8 },
-  routingTitleText: { fontSize: 18, fontWeight: '800', color: COLORS.textDark },
-  routingInputGroup: {
+  routingEngineHeaderTitleRowFlex: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
+  routingEngineHardwareBackButtonWrap: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', marginRight: 8 },
+  routingEngineTitleLabelStringText: { fontSize: 18, fontWeight: '800', color: COLORS.textDark },
+  routingEngineInputGroupRowFlexContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F1F3F6',
@@ -2319,10 +2489,10 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     height: 50,
   },
-  routingIcon: { marginRight: 8 },
-  routingInput: { flex: 1, fontSize: 15, color: COLORS.textDark, height: '100%' },
+  routingEngineInputIconSpacing: { marginRight: 8 },
+  routingEngineInputFieldComponent: { flex: 1, fontSize: 15, color: COLORS.textDark, height: '100%' },
 
-  searchDropdownContainer: {
+  universalSearchDropdownAbsoluteContainerLayer: {
     position: 'absolute',
     left: 16,
     right: 16,
@@ -2338,7 +2508,7 @@ const styles = StyleSheet.create({
     elevation: 8,
     zIndex: 10000,
   },
-  suggestionItem: {
+  universalSuggestionItemFlexRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
@@ -2346,11 +2516,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#F1F3F6',
   },
-  suggestionText: { fontSize: 14, fontWeight: '600', color: COLORS.textDark },
-  suggestionSubText: { fontSize: 12, color: COLORS.textMuted, marginTop: 2 },
+  universalSuggestionTitleTextStrong: { fontSize: 14, fontWeight: '600', color: COLORS.textDark },
+  universalSuggestionSubtitleTextFaded: { fontSize: 12, color: COLORS.textMuted, marginTop: 2 },
 
-  modalityContainer: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 },
-  modalityBtn: {
+  vehicleModalityToggleContainerRowBox: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 },
+  vehicleModalitySelectableButtonCore: {
     flex: 1,
     alignItems: 'center',
     paddingVertical: 10,
@@ -2358,11 +2528,11 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: '#F1F3F6',
   },
-  modalityBtnActive: { backgroundColor: COLORS.safeRoute },
-  modalityBtnText: { marginTop: 4, fontSize: 12, fontWeight: '600', color: COLORS.textMuted },
-  vehicleLimitationNote: { marginTop: 8, fontSize: 12, color: COLORS.warning, fontStyle: 'italic', textAlign: 'center' },
+  vehicleModalitySelectableButtonCoreActive: { backgroundColor: COLORS.safeRoute },
+  vehicleModalitySelectableButtonLabelString: { marginTop: 4, fontSize: 12, fontWeight: '600', color: COLORS.textMuted },
+  vehicleModalityLimitationNoteDisclaimerStringText: { marginTop: 8, fontSize: 12, color: COLORS.warning, fontStyle: 'italic', textAlign: 'center' },
 
-  calculateRouteBtn: {
+  calculateSafeRouteSubmissionButtonComponent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -2371,10 +2541,10 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     marginTop: 14,
   },
-  calculateRouteBtnDisabled: { backgroundColor: COLORS.disabled },
-  calculateRouteBtnText: { marginLeft: 8, fontSize: 15, fontWeight: '700', color: COLORS.surface },
+  calculateSafeRouteSubmissionButtonComponentDisabledState: { backgroundColor: COLORS.disabled },
+  calculateSafeRouteSubmissionButtonStringLabelText: { marginLeft: 8, fontSize: 15, fontWeight: '700', color: COLORS.surface },
 
-  reportPanel: {
+  unifiedReportingPanelAbsoluteContainerBox: {
     position: 'absolute',
     bottom: 24,
     left: 16,
@@ -2388,21 +2558,21 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 8,
   },
-  reportPanelTitle: { fontSize: 16, fontWeight: '800', color: COLORS.textDark },
-  reportPanelSubtitle: { marginTop: 4, fontSize: 13, color: COLORS.textMuted },
-  reportToggleContainer: {
+  unifiedReportingPanelMasterTitleStringText: { fontSize: 16, fontWeight: '800', color: COLORS.textDark },
+  unifiedReportingPanelMasterSubtitleStringText: { marginTop: 4, fontSize: 13, color: COLORS.textMuted },
+  unifiedReportingPanelSegmentedToggleContainerRow: {
     flexDirection: 'row',
     backgroundColor: '#F1F3F6',
     borderRadius: 12,
     padding: 4,
     marginTop: 14,
   },
-  reportToggleBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 9 },
-  reportToggleBtnActive: { backgroundColor: COLORS.primary },
-  reportToggleBtnText: { fontSize: 13, fontWeight: '700', color: COLORS.textMuted },
-  reportToggleBtnTextActive: { color: COLORS.surface },
-  reportButtonRow: { flexDirection: 'row', marginTop: 16, gap: 10 },
-  reportCancelBtn: {
+  unifiedReportingPanelSegmentedToggleButtonNode: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 9 },
+  unifiedReportingPanelSegmentedToggleButtonNodeActive: { backgroundColor: COLORS.primary },
+  unifiedReportingPanelSegmentedToggleButtonLabelString: { fontSize: 13, fontWeight: '700', color: COLORS.textMuted },
+  unifiedReportingPanelSegmentedToggleButtonLabelStringActive: { color: COLORS.surface },
+  unifiedReportingPanelSubmissionActionRowFlex: { flexDirection: 'row', marginTop: 16, gap: 10 },
+  unifiedReportingPanelCancelButtonNode: {
     flex: 1,
     height: 52,
     borderRadius: 14,
@@ -2410,8 +2580,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#F1F3F6',
   },
-  reportCancelText: { fontSize: 15, fontWeight: '700', color: COLORS.textDark },
-  reportConfirmBtn: {
+  unifiedReportingPanelCancelButtonLabelText: { fontSize: 15, fontWeight: '700', color: COLORS.textDark },
+  unifiedReportingPanelConfirmButtonNode: {
     flex: 1.6,
     flexDirection: 'row',
     height: 52,
@@ -2420,9 +2590,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: COLORS.primary,
   },
-  reportConfirmText: { marginLeft: 6, fontSize: 15, fontWeight: '700', color: COLORS.surface },
+  unifiedReportingPanelConfirmButtonLabelText: { marginLeft: 6, fontSize: 15, fontWeight: '700', color: COLORS.surface },
 
-  routeMetricsPanel: {
+  mathematicalRouteMetricsPanelAbsoluteContainerBox: {
     position: 'absolute',
     bottom: 24,
     left: 16,
@@ -2436,20 +2606,10 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 8,
   },
-  routeMetricsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  routeMetricsDistance: { fontSize: 22, fontWeight: '900', color: COLORS.textDark },
-  routeMetricsSubText: { marginTop: 2, fontSize: 13, color: COLORS.textMuted },
-  alternateRouteBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 9,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    backgroundColor: '#F1F3F6',
-  },
-  alternateRouteBtnActive: { backgroundColor: COLORS.alternateRoute },
-  alternateRouteBtnText: { marginLeft: 6, fontSize: 12, fontWeight: '700', color: COLORS.textMuted },
-  startNavigationBtn: {
+  mathematicalRouteMetricsPanelInformationRowFlex: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  mathematicalRouteMetricsPanelDistanceNumericalText: { fontSize: 22, fontWeight: '900', color: COLORS.textDark },
+  mathematicalRouteMetricsPanelSubInformationTextNode: { marginTop: 2, fontSize: 13, color: COLORS.textMuted },
+  mathematicalRouteMetricsPanelStartNavigationButtonNode: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -2458,9 +2618,9 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     marginTop: 16,
   },
-  startNavigationText: { marginLeft: 8, fontSize: 15, fontWeight: '700', color: COLORS.surface },
+  mathematicalRouteMetricsPanelStartNavigationButtonLabelText: { marginLeft: 8, fontSize: 15, fontWeight: '700', color: COLORS.surface },
 
-  activeNavTopPanel: {
+  activeTrueNavigationTopInformationPanelBox: {
     position: 'absolute',
     top: Platform.OS === 'ios' ? 60 : 40,
     left: 16,
@@ -2475,23 +2635,23 @@ const styles = StyleSheet.create({
     elevation: 10,
     zIndex: 9999,
   },
-  activeNavRow: {
+  activeTrueNavigationInformationRowFlexWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  activeNavDistanceText: {
+  activeTrueNavigationDistanceRemainingLargeTextString: {
     fontSize: 24,
     fontWeight: '900',
     color: COLORS.safeRoute,
   },
-  activeNavDestinationText: {
+  activeTrueNavigationDestinationLabelSubTextString: {
     fontSize: 14,
     fontWeight: '600',
     color: COLORS.textDark,
     marginTop: 4,
   },
-  activeNavCancelBtn: {
+  activeTrueNavigationCancelHardwareButtonNode: {
     backgroundColor: COLORS.primary,
     paddingVertical: 10,
     paddingHorizontal: 16,
@@ -2499,14 +2659,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
   },
-  activeNavCancelText: {
+  activeTrueNavigationCancelButtonLabelTextString: {
     color: COLORS.surface,
     fontWeight: '800',
     marginLeft: 6,
   },
 
-  fabContainer: { position: 'absolute', right: 16, bottom: 24, alignItems: 'center' },
-  fab: {
+  omniFloatingActionButtonRailAbsoluteContainer: { position: 'absolute', right: 16, bottom: 24, alignItems: 'center' },
+  omniFloatingActionButtonCoreItemNode: {
     width: 60,
     height: 60,
     borderRadius: 30,
@@ -2520,10 +2680,10 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 8,
   },
-  fabPrimary: { backgroundColor: COLORS.safeRoute, marginTop: 0 },
-  fabText: { fontSize: 10, fontWeight: '800', color: COLORS.textDark, marginTop: 2 },
+  omniFloatingActionButtonPrimaryAccentNode: { backgroundColor: COLORS.safeRoute, marginTop: 0 },
+  omniFloatingActionButtonLabelTextString: { fontSize: 10, fontWeight: '800', color: COLORS.textDark, marginTop: 2 },
 
-  loadingOverlay: {
+  globalApplicationLoadingOverlayShieldViewBox: {
     position: 'absolute',
     top: Platform.OS === 'ios' ? 110 : 80,
     alignSelf: 'center',
@@ -2532,4 +2692,165 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
+
+  // ==========================================
+  // PREMIUM HOME DASHBOARD NEW STYLES LOGIC
+  // ==========================================
+  dashboardMainContainer: {
+    flex: 1,
+    backgroundColor: COLORS.surfaceLightGrid,
+  },
+  dashboardHeaderSection: {
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'ios' ? 60 : 30,
+    paddingBottom: 20,
+    backgroundColor: COLORS.primary,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 15,
+  },
+  dashboardHeaderRowFlex: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  dashboardGreetingTitle: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: COLORS.surface,
+    marginBottom: 4,
+  },
+  dashboardGreetingSubtitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.8)',
+  },
+  dashboardProfileAvatarButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    padding: 10,
+    borderRadius: 16,
+  },
+  dashboardBannerImagePlaceholder: {
+    marginTop: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  dashboardBannerText: {
+    color: COLORS.surface,
+    fontSize: 18,
+    fontWeight: '800',
+    marginTop: 12,
+  },
+  dashboardBannerSubtext: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 13,
+    marginTop: 4,
+  },
+  dashboardScrollGridContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 24,
+  },
+  dashboardSectionTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: COLORS.textDark,
+    marginBottom: 16,
+  },
+  dashboardActionGridFlexRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  dashboardActionCardItem: {
+    width: '48%',
+    backgroundColor: COLORS.surface,
+    borderRadius: 20,
+    padding: 16,
+    shadowColor: COLORS.fabShadow,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  dashboardActionIconWrapperBackground: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  dashboardActionCardTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: COLORS.textDark,
+    marginBottom: 4,
+  },
+  dashboardActionCardDescription: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    lineHeight: 18,
+  },
+  dashboardFullWidthButtonStruct: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    padding: 16,
+    borderRadius: 16,
+    marginBottom: 12,
+    shadowColor: COLORS.fabShadow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  dashboardFullWidthButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.textDark,
+  },
+  
+  bottomNavigationBarContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    backgroundColor: COLORS.surface,
+    paddingVertical: Platform.OS === 'ios' ? 24 : 16,
+    paddingHorizontal: 10,
+    justifyContent: 'space-around',
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    shadowColor: COLORS.fabShadow,
+    shadowOffset: { width: 0, height: -10 },
+    shadowOpacity: 0.05,
+    shadowRadius: 15,
+    elevation: 20,
+  },
+  bottomNavigationItemButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+  },
+  bottomNavigationItemButtonActive: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+  },
+  bottomNavigationItemText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: COLORS.textMuted,
+    marginTop: 4,
+  }
 });
