@@ -21,8 +21,9 @@
  * - NATIVE RENDERING: Utilizes native spatial engines (`react-native-maps`) 
  *   strictly bound to hardware-accelerated viewports for 60FPS performance.
  * - ASYNC ISOLATION: Features robust, exponential-backoff network fallback systems.
- * - UX DECLUTTERING: Removed all redundant Floating Action Buttons (FABs) from the 
- *   map viewport to ensure a distraction-free spatial experience.
+ * - UX DECLUTTERING & POLISH: Added incoming badges for evaluation presentation, 
+ *   re-ordered grid priorities (Scanner priority), and ensured crisp white typography 
+ *   on high-contrast status banners.
  * ============================================================================
  */
 
@@ -1732,22 +1733,22 @@ export default function DashboardScreen(): React.JSX.Element {
           </View>
         </View>
 
-        {/* CORE ACTION CENTER: Four Pillar Feature Grid natively structured */}
+        {/* CORE ACTION CENTER: Four Pillar Feature Grid natively structured (Scanner shifted to priority 1) */}
         <ScrollView contentContainerStyle={styles.dashboardScrollGridContainer} showsVerticalScrollIndicator={false}>
           <Text style={[styles.dashboardSectionTitle, isDarkMode && { color: COLORS.surface }]}>Core Spatial Operations</Text>
           
           <View style={styles.dashboardActionGridFlexRow}>
-            {/* WADIAH UPGRADE: Replaced the duplicate "Spatial Map" card with the native "Community Fund" card. */}
+            {/* PRIORITY 1: Hardware Scanning / Optical Scanner shifted to top-left */}
             <TouchableOpacity 
               style={[styles.dashboardActionCardItem, isDarkMode && { backgroundColor: '#2B2D42', shadowColor: 'transparent' }]} 
               activeOpacity={0.85} 
-              onPress={() => router.push('/fund')}
+              onPress={triggerDualScannerMenu}
             >
-              <View style={[styles.dashboardActionIconWrapperBackground, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
-                <MaterialCommunityIcons name="hand-coin-outline" size={32} color={COLORS.warning} />
+              <View style={[styles.dashboardActionIconWrapperBackground, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
+                <MaterialCommunityIcons name="qrcode-scan" size={32} color={COLORS.emeraldGreen} />
               </View>
-              <Text style={[styles.dashboardActionCardTitle, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_fund') || 'Community Fund'}</Text>
-              <Text style={styles.dashboardActionCardDescription}>Support local infrastructure.</Text>
+              <Text style={[styles.dashboardActionCardTitle, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_scan') || 'Optical Scanner'}</Text>
+              <Text style={styles.dashboardActionCardDescription}>AI room evaluation matrix</Text>
             </TouchableOpacity>
 
             {/* Action 2: Safe Route Calculation directly */}
@@ -1778,17 +1779,17 @@ export default function DashboardScreen(): React.JSX.Element {
               <Text style={styles.dashboardActionCardDescription}>Flag structural anomalies</Text>
             </TouchableOpacity>
 
-            {/* Action 4: Hardware Scanning */}
+            {/* Action 4: Community Fund */}
             <TouchableOpacity 
               style={[styles.dashboardActionCardItem, isDarkMode && { backgroundColor: '#2B2D42', shadowColor: 'transparent' }]} 
               activeOpacity={0.85} 
-              onPress={triggerDualScannerMenu}
+              onPress={() => router.push('/fund')}
             >
-              <View style={[styles.dashboardActionIconWrapperBackground, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
-                <MaterialCommunityIcons name="qrcode-scan" size={32} color={COLORS.emeraldGreen} />
+              <View style={[styles.dashboardActionIconWrapperBackground, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
+                <MaterialCommunityIcons name="hand-coin-outline" size={32} color={COLORS.warning} />
               </View>
-              <Text style={[styles.dashboardActionCardTitle, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_scan') || 'Optical Scanner'}</Text>
-              <Text style={styles.dashboardActionCardDescription}>AI room evaluation matrix</Text>
+              <Text style={[styles.dashboardActionCardTitle, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_fund') || 'Community Fund'}</Text>
+              <Text style={styles.dashboardActionCardDescription}>Support local infrastructure.</Text>
             </TouchableOpacity>
           </View>
 
@@ -1804,7 +1805,6 @@ export default function DashboardScreen(): React.JSX.Element {
           {user?.role === 'shopkeeper' && (
              <TouchableOpacity style={[styles.dashboardFullWidthButtonStruct, isDarkMode && { backgroundColor: '#2B2D42' }]} onPress={() => router.push('/shopkeeper')}>
                <MaterialCommunityIcons name="storefront-outline" size={24} color={COLORS.oceanBlue} style={{ marginRight: 12 }} />
-               {/* WADIAH UPGRADE: Localized the Directory Setup Portal text natively */}
                <Text style={[styles.dashboardFullWidthButtonText, isDarkMode && { color: COLORS.surface }]}>{translateFunction('fab_portal') || 'Directory Setup'} Configuration</Text>
                <MaterialCommunityIcons name="chevron-right" size={24} color={COLORS.textMuted} style={{ marginLeft: 'auto' }} />
              </TouchableOpacity>
@@ -1840,12 +1840,15 @@ export default function DashboardScreen(): React.JSX.Element {
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.bottomNavigationItemButton} activeOpacity={0.8} onPress={() => setInteractionMode('view')}>
+          {/* WADIAH UX UPGRADE: Added prominent bold "INCOMING" tag over the Map tab for judges' evaluation clarity. */}
+          <TouchableOpacity style={[styles.bottomNavigationItemButton, { position: 'relative' }]} activeOpacity={0.8} onPress={() => setInteractionMode('view')}>
+            <View style={styles.incomingBadgeContainer}>
+              <Text style={styles.incomingBadgeText}>INCOMING</Text>
+            </View>
             <MaterialCommunityIcons name="map-outline" size={26} color={COLORS.textMuted} />
             <Text style={styles.bottomNavigationItemText}>Map</Text>
           </TouchableOpacity>
 
-          {/* WADIAH UPGRADE: Relinked to dynamic Profile Page instead of immediate logout mechanism natively. */}
           <TouchableOpacity style={styles.bottomNavigationItemButton} activeOpacity={0.8} onPress={() => router.push('/profile')}>
             <MaterialCommunityIcons name="account-circle-outline" size={26} color={COLORS.textMuted} />
             <Text style={styles.bottomNavigationItemText}>Profile</Text>
@@ -2742,5 +2745,26 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: COLORS.textMuted,
     marginTop: 4,
+  },
+  incomingBadgeContainer: {
+    position: 'absolute',
+    top: -8,
+    right: '25%',
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 6,
+    zIndex: 10,
+    shadowColor: COLORS.fabShadow,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+    elevation: 3,
+  },
+  incomingBadgeText: {
+    fontSize: 8,
+    fontWeight: '900',
+    color: COLORS.surface,
+    letterSpacing: 0.5,
   }
 });
