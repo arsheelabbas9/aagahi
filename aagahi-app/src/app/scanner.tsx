@@ -711,6 +711,7 @@ export default function ScannerScreen(): React.JSX.Element {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'X-Tunnel-Skip-AntiPhishing-Page': 'true', // Bypasses Microsoft Tunnel Firewall
           },
           body: JSON.stringify(requestPayloadObject),
           signal: executionAbortController.signal,
@@ -935,6 +936,7 @@ export default function ScannerScreen(): React.JSX.Element {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
+          'X-Tunnel-Skip-AntiPhishing-Page': 'true',
         },
       };
 
