@@ -18,10 +18,9 @@ Aagahi is built on a high-performance, decoupled architecture:
 ## ✨ The 5 Core Pillars
 
 1. **Titanium Identity Gatekeeper** — Multi-role authentication (Citizen, Warden, Shopkeeper) with strict row-level security and Supabase integration.
-2. **Community Spatial Dashboard** — A 60FPS native map engine that calculates safe navigational routes by mathematically evading dynamic hazard epicenters in real-time.
-3. **AI Optical Scanner** — A dual-scanner system featuring a multi-angle AI Vision wizard. It captures physical infrastructure, processes it through Groq's ViT encoders, and generates localized safety telemetry.
-4. **Community Fund & Chat** — Real-time neighborhood communication and integrated public crowdfunding campaigns for infrastructure repair.
-5. **User Telemetry Hub** — A composite data aggregator capturing human-intelligence surveys, dynamic compliance scoring, and unified activity timelines.
+2. **AI Optical Scanner** — A dual-scanner system featuring a multi-angle AI Vision wizard. It captures physical infrastructure, processes it through Groq's ViT encoders, and generates localized safety telemetry.
+3. **Community Fund & Chat** — Real-time neighborhood communication and integrated public crowdfunding campaigns for infrastructure repair.
+4. **User Telemetry Hub** — A composite data aggregator capturing human-intelligence surveys, dynamic compliance scoring, and unified activity timelines.
 
 ---
 
