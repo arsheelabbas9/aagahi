@@ -144,4 +144,3 @@ Once the Aagahi app boots on your phone, test the following core flows:
 
 ---
 
-*Built by the Aagahi Spatial Division.*
