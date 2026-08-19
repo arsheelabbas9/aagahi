@@ -140,8 +140,7 @@ Once the Aagahi app boots on your phone, test the following core flows:
 
 1. **Identity Gatekeeper** — Register a new user profile natively as a Citizen, Warden, or Shopkeeper.
 2. **Spatial Dashboard** — View active hazards on the interactive, hardware-accelerated map.
-3. **Safe Routing** — Tap "Navigate" on the map to generate paths that dynamically evade known hazard epicenters using the custom routing algorithm.
-4. **AI Optical Scanner** — From the home dashboard, tap "Optical Scanner" and point your camera at a physical room to test the Groq Qwen 3.6 AI Vision pipeline in real time.
+3. **AI Optical Scanner** — From the home dashboard, tap "Optical Scanner" and point your camera at a physical room to test the Groq Qwen 3.6 AI Vision pipeline in real time.
 
 ---
 
